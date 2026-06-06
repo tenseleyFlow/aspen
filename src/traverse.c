@@ -3,6 +3,7 @@
 #include "arena.h"
 #include "dstr.h"
 #include "entry.h"
+#include "filter.h"
 #include "glob.h"
 #include "hashtab.h"
 #include "options.h"
@@ -11,6 +12,7 @@
 #include "sys/dir.h"
 #include "sys/xstat.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -25,8 +27,19 @@ struct wctx {
 	struct totals *tot;
 	int *errors;
 	struct inoset seen; /* -l cycle detection */
+	struct ignorefile *fstack; /* --gitignore filter stack */
 	dev_t root_dev;
 };
+
+/* Push the current directory's .gitignore (c->path must be the dir path). */
+static struct ignorefile *push_dir_gitignore(struct wctx *c)
+{
+	if (!c->o->gitignore)
+		return NULL;
+	struct ignorefile *ig = gitignore_load_dir(c->path.data);
+	gitstack_push(&c->fstack, ig);
+	return ig;
+}
 
 struct evec {
 	struct entry **v;
@@ -161,6 +174,20 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 
 		int isdir = (t == ASP_DIR) || (t == ASP_LNK && e->ltype == ASP_DIR);
 
+		/* .gitignore filtering (before -P/-I/-d, like tree). Uses the full
+		 * path for absolute patterns. */
+		if (c->o->gitignore && c->fstack) {
+			size_t save = c->path.len;
+			dstr_appendc(&c->path, '/');
+			dstr_append(&c->path, de.name, strlen(de.name));
+			int filt = gitignore_filtered(c->fstack, c->path.data, de.name,
+						       isdir, c->o->ignorecase);
+			c->path.len = save;
+			c->path.data[save] = '\0';
+			if (filt)
+				continue;
+		}
+
 		/* -P applies to non-dirs only (dirs always pass so we can descend),
 		 * unless -l makes a symlink dir-like; suppressed by --matchdirs. -I
 		 * applies to everything. Names match by basename (tree). */
@@ -187,6 +214,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 	struct evec ev = { NULL, 0, 0 };
 	const struct options *o = c->o;
 	int dirfd = asp_dirfd(d);
+	struct ignorefile *ig = push_dir_gitignore(c);
 
 	read_level(c, d, &ev, 0);
 
@@ -251,6 +279,8 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		c->path.data[pathlen] = '\0';
 	}
 
+	if (ig)
+		gitstack_pop(&c->fstack);
 	free(ev.v);
 	arena_rewind(&c->arena, mk);
 }
@@ -263,6 +293,8 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 	const struct options *o = c->o;
 	struct evec ev = { NULL, 0, 0 };
 	int dirfd = asp_dirfd(d);
+	size_t pathlen = c->path.len;
+	struct ignorefile *ig = push_dir_gitignore(c);
 
 	read_level(c, d, &ev, suppress_pat);
 
@@ -298,7 +330,12 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 		if (descend) {
 			struct asp_dir *cd;
 			if (asp_diropen_at(dirfd, e->name, &cd) == 0) {
+				/* track path for child .gitignore + filtercheck */
+				dstr_appendc(&c->path, '/');
+				dstr_append(&c->path, e->name, e->namelen);
 				e->child = build_level(c, cd, depth + 1, child_suppress);
+				c->path.len = pathlen;
+				c->path.data[pathlen] = '\0';
 				asp_dirclose(cd);
 			} else {
 				e->err = "error opening dir";
@@ -308,6 +345,9 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 			e->err = post_err;
 		}
 	}
+
+	if (ig)
+		gitstack_pop(&c->fstack);
 
 	struct entry **arr = arena_alloc(&c->arena, (ev.n + 1) * sizeof *arr);
 	for (size_t i = 0; i < ev.n; i++)
@@ -416,7 +456,21 @@ void asp_walk(const char *root, const struct options *o,
 	c.tot = tot;
 	c.errors = errors;
 	c.root_dev = 0;
+	c.fstack = NULL;
 	inoset_init(&c.seen);
+
+	/* Bottom of the filter stack: an explicit --gitfile and, with --gitignore,
+	 * $GIT_DIR/info/exclude. (The implicit parent-.gitignore walk is deferred.) */
+	if (o->gitfile)
+		gitstack_push(&c.fstack, gitignore_load_file(".", o->gitfile));
+	if (o->gitignore) {
+		const char *gd = getenv("GIT_DIR");
+		if (gd) {
+			char ex[4096];
+			snprintf(ex, sizeof ex, "%s/info/exclude", gd);
+			gitstack_push(&c.fstack, gitignore_load_file(gd, ex));
+		}
+	}
 
 	/* Root stat: for -x device, -l cycle seed, the metadata bracket, and color. */
 	struct asp_statinfo rs;
@@ -453,6 +507,7 @@ void asp_walk(const char *root, const struct options *o,
 	}
 
 	asp_dirclose(d);
+	gitstack_flush(&c.fstack);
 	inoset_destroy(&c.seen);
 	dstr_free(&c.path);
 	arena_destroy(&c.arena);
