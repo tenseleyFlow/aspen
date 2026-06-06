@@ -17,6 +17,7 @@ struct unix_ctx {
 	struct dstr out;
 	int fd;
 	int mb_cur_max;
+	int np_flags; /* name_print flags from -q/-N/-Q */
 	const struct options *o;
 	const struct linedraw *ld;
 	unsigned char *last; /* last[depth] = is_last; grows on demand */

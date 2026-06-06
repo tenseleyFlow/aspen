@@ -42,6 +42,8 @@ void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max, const struct opti
 	dstr_init(&u->out);
 	u->fd = fd;
 	u->mb_cur_max = mb_cur_max;
+	u->np_flags = (o->quote ? NP_QUOTE : 0) | (o->noprint ? NP_NOPRINT : 0) |
+		      (o->qmark ? NP_QMARK : 0);
 	u->o = o;
 	u->ld = pick_linedraw(o->charset);
 	u->last = NULL;
@@ -131,7 +133,7 @@ static void ux_root(void *ctx, const char *path, int failed, const struct asp_st
 {
 	struct unix_ctx *u = ctx;
 	emit_info(u, st); /* root gets the bracket too (tree) */
-	name_print(&u->out, path, strlen(path), u->mb_cur_max);
+	name_print(&u->out, path, strlen(path), u->mb_cur_max, u->np_flags);
 	if (failed)
 		dstr_appendz(&u->out, "  [error opening dir]");
 	else if (u->o->classify && !u->o->dirsonly)
@@ -157,13 +159,13 @@ static void ux_entry(void *ctx, const struct entry *e, const char *path,
 	}
 
 	if (o->fullpath)
-		name_print(&u->out, path, strlen(path), u->mb_cur_max);
+		name_print(&u->out, path, strlen(path), u->mb_cur_max, u->np_flags);
 	else
-		name_print(&u->out, e->name, e->namelen, u->mb_cur_max);
+		name_print(&u->out, e->name, e->namelen, u->mb_cur_max, u->np_flags);
 
 	if (e->lnk) {
 		dstr_appendz(&u->out, " -> ");
-		name_print(&u->out, e->lnk, strlen(e->lnk), u->mb_cur_max);
+		name_print(&u->out, e->lnk, strlen(e->lnk), u->mb_cur_max, u->np_flags);
 	}
 
 	if (o->classify) {

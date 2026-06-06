@@ -3,6 +3,7 @@
 #include "arena.h"
 #include "dstr.h"
 #include "entry.h"
+#include "glob.h"
 #include "hashtab.h"
 #include "options.h"
 #include "sort.h"
@@ -70,6 +71,17 @@ static int meta_wanted(const struct options *o)
 static int sort_needs_stat(const struct options *o)
 {
 	return o->sort == SORT_SIZE || o->sort == SORT_MTIME || o->sort == SORT_CTIME;
+}
+
+/* patterns come from argv (writable), which patmatch needs for its '|' split. */
+static int pat_match_any(const char **pats, size_t n, const char *name, int isdir, int ic)
+{
+	/* tree treats patmatch's result as truthy: a match (1) AND a syntax error
+	 * (-1) both count, so a malformed pattern matches everything. */
+	for (size_t i = 0; i < n; i++)
+		if (asp_patmatch(name, (char *)pats[i], isdir, ic) != 0)
+			return 1;
+	return 0;
 }
 
 static void fill_link(struct wctx *c, int dirfd, struct entry *e)
@@ -145,9 +157,21 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 			}
 		}
 
+		int isdir = (t == ASP_DIR) || (t == ASP_LNK && e->ltype == ASP_DIR);
+
+		/* -P include applies to non-directories only (a real dir always passes
+		 * so we can descend), unless -l makes a symlink dir-like. -I exclude
+		 * applies to everything. Names match by basename (tree). */
+		if (o->npat &&
+		    t != ASP_DIR && !(o->follow && t == ASP_LNK && e->ltype == ASP_DIR) &&
+		    !pat_match_any(o->patterns, o->npat, de.name, isdir, o->ignorecase))
+			continue;
+		if (o->nipat &&
+		    pat_match_any(o->ipatterns, o->nipat, de.name, isdir, o->ignorecase))
+			continue;
+
 		/* -d keeps only directory-like entries (incl. symlink-to-dir, like tree). */
-		if (o->dirsonly &&
-		    !(t == ASP_DIR || (t == ASP_LNK && e->ltype == ASP_DIR)))
+		if (o->dirsonly && !isdir)
 			continue;
 
 		evec_push(&ev, e);
