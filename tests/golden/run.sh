@@ -19,6 +19,7 @@ lnk="$work/lnk"
 meta="$work/meta"
 vert="$work/vert"
 prn="$work/prn"
+gign="$work/gign"
 ASP=./aspen
 
 mkdir -p "$work"
@@ -29,6 +30,7 @@ sh "$here/mklnk.sh" "$lnk" >/dev/null
 sh "$here/mkmeta.sh" "$meta" >/dev/null
 sh "$here/mkvert.sh" "$vert" >/dev/null
 sh "$here/mkprune.sh" "$prn" >/dev/null
+sh "$here/mkgign.sh" "$gign" >/dev/null
 
 # Flag-sets compared; %C = corpus, %W = weird names, %L = symlink/cycle fixture.
 # Contains ONLY behavior aspen implements so far; grows each sprint (never gate on
@@ -127,6 +129,13 @@ CASES='%C
 --du --prune %P
 --du -L 2 %C
 --matchdirs -P alpha %C
+--gitignore %G
+--gitignore -a %G
+--gitignore -F %G
+--gitignore --prune %G
+--gitignore -P *.txt %G
+--gitignore --ignore-case %G
+--gitignore --du %G
 -L 0 %C
 -L
 /no/such/path-xyz'
@@ -135,7 +144,7 @@ normprog() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /'; }
 
 run_case() { # <bin> <case-string>
 	_bin=$1
-	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g")
+	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g; s#%G#$gign#g")
 	_oi=$IFS
 	IFS=' 	'
 	set -f # no globbing: pattern args like *.txt must reach the binary verbatim
