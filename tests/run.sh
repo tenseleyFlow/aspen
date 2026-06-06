@@ -5,11 +5,14 @@
 set -u
 
 CC=${CC:-cc}
-CFLAGS="-std=c11 -O1 -g -Isrc -I. -Itests/unit -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all"
 work=tests/.work
 mkdir -p "$work"
 
-[ -f config.h ] || ./configure >/dev/null
+[ -f config.mk ] || ./configure >/dev/null
+# Reuse configure's per-platform feature macros (e.g. -D_GNU_SOURCE on Linux, so
+# glibc exposes S_IFLNK/AT_FDCWD/syscall when the unit objects compile src/*.c).
+conf_cflags=$(sed -n 's/^CONF_CFLAGS = //p' config.mk)
+CFLAGS="-std=c11 -O1 -g $conf_cflags -Isrc -I. -Itests/unit -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all"
 libsrc=$(ls src/*.c src/sys/*.c src/render/*.c 2>/dev/null | grep -v '/main\.c$')
 
 fail=0
