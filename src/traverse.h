@@ -3,10 +3,9 @@
 
 /*
  * Depth-first traversal engine (serial). fd-relative (openat/getdents/fstatat),
- * arena-backed entries, stat only when forced. Emits each entry to a visitor in
- * pre-order; the visitor (debug dump now, the real renderer in Sprint 02) draws
- * indentation from depth + is_last. Descent decisions (type, and later -L/-d/-x/-l)
- * live here, not in the visitor.
+ * arena-backed entries, stat only when forced. Emits each entry to a renderer in
+ * pre-order; the renderer draws indentation from depth + is_last + ancestor
+ * last-flags it tracks. Descent decisions (type, and later -L/-d/-x/-l) live here.
  */
 
 #include "entry.h"
@@ -17,20 +16,18 @@ struct totals {
 };
 
 struct walk_opts {
-	int all;          /* -a: include dotfiles */
-	int follow_links; /* -l (Sprint 03) */
-	int one_fs;       /* -x (Sprint 03) */
+	int all;            /* -a: include dotfiles */
+	int follow_links;   /* -l (Sprint 03) */
+	int one_fs;         /* -x (Sprint 03) */
 	unsigned stat_mask; /* metadata flags that force a stat (Sprint 04) */
 };
 
-/* Called once per discovered entry, pre-order. fullpath is the entry's path
- * (root joined with components). Do not retain pointers past the call. */
-typedef void (*asp_visit_fn)(void *ctx, const struct entry *e,
-			     const char *fullpath, int depth, int is_last);
+struct renderer; /* defined in render.h */
 
-/* Walk `root`'s subtree. Returns the number of errors (failed opens/stats),
- * mirroring tree's error accounting (=> exit code 2 when nonzero). */
-int asp_walk(const char *root, const struct walk_opts *opts,
-	     asp_visit_fn visit, void *ctx, struct totals *tot);
+/* Walk one root's subtree, emitting via the renderer. Prints the root line
+ * (r->root), counts entries into *tot (root counts as a dir on success), and
+ * adds to *errors. */
+void asp_walk(const char *root, const struct walk_opts *opts,
+	      const struct renderer *r, void *ctx, struct totals *tot, int *errors);
 
 #endif /* ASP_TRAVERSE_H */

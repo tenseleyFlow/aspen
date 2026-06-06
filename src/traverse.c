@@ -1,4 +1,5 @@
 #include "traverse.h"
+#include "render.h"
 #include "arena.h"
 #include "dstr.h"
 #include "entry.h"
@@ -8,23 +9,29 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 struct wctx {
 	struct arena arena;
 	struct dstr path; /* current path, no trailing slash */
 	const struct walk_opts *opts;
-	asp_visit_fn visit;
-	void *vctx;
-	struct totals tot;
-	int errors;
+	const struct renderer *r;
+	void *rctx;
+	struct totals *tot;
+	int *errors;
 };
 
-/* A directory's entry pointers, gathered before sorting/emitting. Pointers are
- * cheap (8B); the entries themselves live in the arena. */
 struct evec {
 	struct entry **v;
 	size_t n, cap;
 };
+
+static int cmp_name(const void *a, const void *b)
+{
+	const struct entry *x = *(const struct entry *const *)a;
+	const struct entry *y = *(const struct entry *const *)b;
+	return strcoll(x->name, y->name);
+}
 
 static void evec_push(struct evec *ev, struct entry *e)
 {
@@ -35,7 +42,6 @@ static void evec_push(struct evec *ev, struct entry *e)
 	ev->v[ev->n++] = e;
 }
 
-/* Do we need a stat, or does d_type already answer the question? */
 static int needs_stat(enum asp_type t, const struct walk_opts *o)
 {
 	if (t == ASP_UNKNOWN)
@@ -49,6 +55,20 @@ static int needs_stat(enum asp_type t, const struct walk_opts *o)
 	return 0;
 }
 
+/* Fill e->lnk with the symlink target (or tree's exact error string). readlink
+ * is required output data, not a stat — it does not break the no-stat fast path. */
+static void fill_link(struct wctx *c, int dirfd, struct entry *e)
+{
+	char buf[4096];
+	ssize_t n = readlinkat(dirfd, e->name, buf, sizeof buf - 1);
+	if (n < 0) {
+		e->lnk = arena_strdup(&c->arena, "[Error reading symbolic link information]");
+		return;
+	}
+	buf[n] = '\0';
+	e->lnk = arena_strdup(&c->arena, buf);
+}
+
 static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 {
 	struct arena_marker mk = arena_mark(&c->arena);
@@ -59,7 +79,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 
 	while ((r = asp_dirread(d, &de)) == 1) {
 		if (!c->opts->all && de.name[0] == '.')
-			continue; /* dotfile policy (no -a) */
+			continue;
 
 		enum asp_type t = de.type;
 		if (needs_stat(t, c->opts)) {
@@ -68,20 +88,23 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 				if (t == ASP_UNKNOWN)
 					t = asp_type_from_mode(si.mode);
 			} else {
-				/* tree drops entries whose stat fails (a racy
-				 * behavior on static trees this never fires). */
-				c->errors++;
+				(*c->errors)++;
 				continue;
 			}
 		}
 
 		struct entry *e = entry_new(&c->arena, de.name, strlen(de.name), t);
+		if (t == ASP_LNK)
+			fill_link(c, asp_dirfd(d), e);
 		evec_push(&ev, e);
 	}
 	if (r < 0)
-		c->errors++;
+		(*c->errors)++;
 
-	/* Sorting lands in Sprint 05; readdir order is fine for set-equality. */
+	/* Default alphabetical sort (tree's alnumsort = strcoll). The other sort
+	 * modes (-v/-t/-c/-U/-r, dirsfirst) and the strxfrm key-cache optimization
+	 * are Sprint 05; the default ordering is required for default parity. */
+	qsort(ev.v, ev.n, sizeof *ev.v, cmp_name);
 
 	for (size_t i = 0; i < ev.n; i++) {
 		struct entry *e = ev.v[i];
@@ -91,21 +114,25 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		dstr_append(&c->path, e->name, e->namelen);
 
 		if (e->type == ASP_DIR)
-			c->tot.dirs++;
+			c->tot->dirs++;
 		else
-			c->tot.files++;
+			c->tot->files++;
 
-		if (c->visit)
-			c->visit(c->vctx, e, c->path.data, depth, is_last);
+		c->r->entry(c->rctx, e, c->path.data, depth, is_last);
 
 		if (e->type == ASP_DIR) {
 			struct asp_dir *cd;
 			if (asp_diropen_at(asp_dirfd(d), e->name, &cd) == 0) {
+				c->r->newline(c->rctx);
 				walk_dir(c, cd, depth + 1);
 				asp_dirclose(cd);
 			} else {
-				c->errors++; /* Sprint 02 renders [error opening dir] */
+				c->r->error(c->rctx, "error opening dir");
+				c->r->newline(c->rctx);
+				(*c->errors)++;
 			}
+		} else {
+			c->r->newline(c->rctx);
 		}
 
 		c->path.len = pathlen;
@@ -116,38 +143,35 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 	arena_rewind(&c->arena, mk);
 }
 
-int asp_walk(const char *root, const struct walk_opts *opts,
-	     asp_visit_fn visit, void *ctx, struct totals *tot)
+void asp_walk(const char *root, const struct walk_opts *opts,
+	      const struct renderer *r, void *ctx, struct totals *tot, int *errors)
 {
+	struct asp_dir *d;
+	if (asp_diropen(root, &d) != 0) {
+		r->root(ctx, root, 1); /* failed: renderer prints the error marker */
+		(*errors)++;
+		return;
+	}
+	r->root(ctx, root, 0);
+	tot->dirs++; /* root counts as a directory */
+
 	struct wctx c;
 	arena_init(&c.arena, 0);
 	dstr_init(&c.path);
 	dstr_appendz(&c.path, root);
-	/* normalize: drop trailing '/' (except a lone "/") so joins don't double up */
 	while (c.path.len > 1 && c.path.data[c.path.len - 1] == '/') {
 		c.path.len--;
 		c.path.data[c.path.len] = '\0';
 	}
-
 	c.opts = opts;
-	c.visit = visit;
-	c.vctx = ctx;
-	c.tot.dirs = 0;
-	c.tot.files = 0;
-	c.errors = 0;
+	c.r = r;
+	c.rctx = ctx;
+	c.tot = tot;
+	c.errors = errors;
 
-	struct asp_dir *d;
-	if (asp_diropen(root, &d) != 0) {
-		c.errors++;
-	} else {
-		c.tot.dirs = 1; /* root counts as a directory, like tree */
-		walk_dir(&c, d, 1);
-		asp_dirclose(d);
-	}
+	walk_dir(&c, d, 1);
 
-	if (tot)
-		*tot = c.tot;
+	asp_dirclose(d);
 	dstr_free(&c.path);
 	arena_destroy(&c.arena);
-	return c.errors;
 }
