@@ -62,6 +62,11 @@ struct options {
 	/* input (Sprint 10) */
 	int fromfile, fromtabfile, fflinks;
 
+	/* concurrency (Sprint 11b): worker threads for the metadata stat pass.
+	 * 0 = auto (size to cores); 1 = force serial; N = N workers. Output is
+	 * byte-identical regardless — only stat() is parallelized. */
+	int threads;
+
 	/* derived (set after parse / color_init) */
 	unsigned stat_mask;
 	int colorize; /* whether colorization is active (forces stat for mode) */

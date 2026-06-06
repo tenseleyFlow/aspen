@@ -20,6 +20,7 @@ enum {
 	ENT_EXEC    = 1u << 2, /* regular file is executable (-F) */
 	ENT_LEXEC   = 1u << 3, /* symlink target is executable (-F) */
 	ENT_MATCHED = 1u << 4, /* --matchdirs: dir name matched -P (prune-protected) */
+	ENT_STAT_FAILED = 1u << 5, /* deferred stat pass: lstat failed; drop in order */
 };
 
 struct entry {

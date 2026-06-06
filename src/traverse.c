@@ -9,6 +9,7 @@
 #include "hashtab.h"
 #include "info.h"
 #include "options.h"
+#include "pool.h"
 #include "sort.h"
 #include "util.h"
 #include "sys/dir.h"
@@ -38,7 +39,12 @@ struct wctx {
 	struct infofile *istack;   /* --info annotation stack */
 	int info_top;              /* current dir has its own .info */
 	dev_t root_dev;
+	struct asp_pool *pool;     /* metadata-stat workers (NULL = serial) */
 };
+
+/* Threshold below which a level's deferred stats run inline — small levels
+ * aren't worth the pool hand-off (~a few us vs ~1us per stat). */
+#define ASP_STAT_PAR_MIN 64
 
 /* Push the current directory's .gitignore (c->path must be the dir path). */
 static struct ignorefile *push_dir_gitignore(struct wctx *c)
@@ -139,6 +145,32 @@ static int needfulltree(const struct options *o)
 
 /* Read one directory's entries into ev (entries from the arena). suppress_pat
  * disables -P for this level (--matchdirs on a name-matched directory). */
+struct stat_job {
+	int dirfd;
+	int want_st;
+	struct entry **ents;
+};
+
+/* One deferred metadata stat. Runs on the pool: touches only entry `i`'s own
+ * fields (and its pre-allocated e->st), never the arena, so it is race-free. */
+static void stat_one(void *arg, size_t i)
+{
+	struct stat_job *j = arg;
+	struct entry *e = j->ents[i];
+	struct asp_statinfo si;
+	if (asp_stat_at(j->dirfd, e->name, 0, &si) != 0) {
+		e->flags |= ENT_STAT_FAILED; /* dropped in order by the caller */
+		return;
+	}
+	e->flags |= ENT_STATTED;
+	e->ino = si.ino;
+	e->dev = si.dev;
+	if (e->type == ASP_REG && is_exec(si.mode))
+		e->flags |= ENT_EXEC;
+	if (j->want_st)
+		memcpy((void *)e->st, &si, sizeof si); /* e->st pre-allocated by caller */
+}
+
 static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int suppress_pat)
 {
 	const struct options *o = c->o;
@@ -146,6 +178,12 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 	int dirfd = asp_dirfd(d);
 	struct asp_dirent de;
 	int r;
+	/* Non-symlink, known-type entries whose only stat need is metadata/sort/
+	 * color/-F/-x/-l are statted in a deferred batch (parallelizable) — the
+	 * dominant cost of -s/-p/-D/--du. Filtering uses name + d_type only, so
+	 * deferring past the filters is correct (and skips stats on filtered-out
+	 * entries). Symlinks and DT_UNKNOWN still stat inline (filtering needs it). */
+	struct evec defer = { NULL, 0, 0 };
 
 	while ((r = asp_dirread(d, &de)) == 1) {
 		if (!o->all && de.name[0] == '.')
@@ -154,14 +192,13 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 		enum asp_type t = de.type;
 		struct asp_statinfo si;
 		int have_si = 0;
+		int deferred = 0;
 
-		/* lstat when: type unknown, metadata/sort columns need it, or a
-		 * non-link flag needs it. Links are stat-followed separately below. */
-		if (t == ASP_UNKNOWN || want_st || (t != ASP_LNK && nonlink_needs_stat(t, o))) {
+		/* Resolve an unknown d_type now (filtering/display need the type). */
+		if (t == ASP_UNKNOWN) {
 			if (asp_stat_at(dirfd, de.name, 0, &si) == 0) {
 				have_si = 1;
-				if (t == ASP_UNKNOWN)
-					t = asp_type_from_mode(si.mode);
+				t = asp_type_from_mode(si.mode);
 			} else {
 				(*c->errors)++;
 				continue; /* tree drops entries whose stat fails */
@@ -175,11 +212,29 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 			e->dev = si.dev;
 			if (t == ASP_REG && is_exec(si.mode))
 				e->flags |= ENT_EXEC;
-			if (want_st) /* link columns/sort use the link's own lstat (tree) */
+			if (want_st)
 				e->st = arena_memdup(&c->arena, &si, sizeof si);
+		} else if (t != ASP_LNK && (want_st || nonlink_needs_stat(t, o))) {
+			/* defer this stat to the batch pass below */
+			deferred = 1;
+			if (want_st) /* pre-allocate so workers never touch the arena */
+				e->st = arena_alloc(&c->arena, sizeof(struct asp_statinfo));
 		}
 
 		if (t == ASP_LNK) {
+			/* The link's own lstat feeds -s/-D columns (tree shows link
+			 * metadata); stat inline since symlinks are uncommon. */
+			if (want_st) {
+				if (asp_stat_at(dirfd, de.name, 0, &si) == 0) {
+					e->flags |= ENT_STATTED;
+					e->ino = si.ino;
+					e->dev = si.dev;
+					e->st = arena_memdup(&c->arena, &si, sizeof si);
+				} else {
+					(*c->errors)++;
+					continue;
+				}
+			}
 			fill_link(c, dirfd, e);
 			struct asp_statinfo ts;
 			if (asp_stat_at(dirfd, de.name, 1, &ts) == 0) {
@@ -246,9 +301,38 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 		}
 
 		evec_push(ev, e);
+		if (deferred)
+			evec_push(&defer, e);
 	}
 	if (r < 0)
 		(*c->errors)++;
+
+	/* Batch the deferred stats — parallel on the pool for big levels, inline
+	 * otherwise. Output order is fixed (by name) before this runs, so timing
+	 * is the only thing that changes. */
+	if (defer.n) {
+		struct stat_job j = { dirfd, want_st, defer.v };
+		struct asp_pool *p = (c->pool && defer.n >= ASP_STAT_PAR_MIN) ? c->pool : NULL;
+		asp_pool_for(p, defer.n, stat_one, &j);
+
+		/* Drop entries whose stat failed, preserving order (tree drops them). */
+		int dropped = 0;
+		for (size_t k = 0; k < defer.n; k++)
+			if (defer.v[k]->flags & ENT_STAT_FAILED)
+				dropped = 1;
+		if (dropped) {
+			size_t w = 0;
+			for (size_t k = 0; k < ev->n; k++) {
+				if (ev->v[k]->flags & ENT_STAT_FAILED) {
+					(*c->errors)++;
+					continue;
+				}
+				ev->v[w++] = ev->v[k];
+			}
+			ev->n = w;
+		}
+	}
+	free(defer.v);
 }
 
 static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
@@ -607,6 +691,7 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	c.fstack = NULL;
 	c.istack = NULL;
 	c.info_top = 0;
+	c.pool = NULL; /* synthetic entries carry their own stat; no real lstat */
 	inoset_init(&c.seen);
 
 	struct entry **top = synth_level(&c, ftop, 0);
@@ -668,6 +753,17 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	c.istack = NULL;
 	c.info_top = 0;
 	inoset_init(&c.seen);
+
+	/* Worker pool for the deferred metadata stat pass. Created only when some
+	 * flag actually stats every entry, so the default (d_type-only) fast path
+	 * pays nothing. --threads 1 forces serial; 0 = auto-size to cores. */
+	{
+		int stat_heavy = meta_wanted(o) || sort_needs_stat(o) || o->colorize ||
+				 o->classify || o->xdev || o->follow;
+		int workers = (o->threads == 1) ? 1
+			: (o->threads > 0 ? o->threads : asp_pool_default_workers());
+		c.pool = (stat_heavy && workers > 1) ? asp_pool_create(workers) : NULL;
+	}
 
 	/* Bottom of the filter stack: an explicit --gitfile and, with --gitignore,
 	 * $GIT_DIR/info/exclude. (The implicit parent-.gitignore walk is deferred.) */
@@ -739,6 +835,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	}
 
 	asp_dirclose(d);
+	asp_pool_destroy(c.pool);
 	gitstack_flush(&c.fstack);
 	infostack_flush(&c.istack);
 	inoset_destroy(&c.seen);

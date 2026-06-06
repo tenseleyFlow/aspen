@@ -128,6 +128,7 @@ static int parse_long(char *a, int *i, int argc, char **argv,
 	if (!strcmp(a, "--opt-toggle")) return 1; /* signal toggle flip to caller */
 	if ((v = long_val(a, "--charset", i, argc, argv))) { o->charset = v; return 0; }
 	if ((v = long_val(a, "--filelimit", i, argc, argv))) { o->filelimit = atol(v); return 0; }
+	if ((v = long_val(a, "--threads", i, argc, argv))) { o->threads = atoi(v); if (o->threads < 0) o->threads = 0; return 0; }
 	if ((v = long_val(a, "--timefmt", i, argc, argv))) { o->timefmt = v; o->dateflag = 1; return 0; }
 	if ((v = long_val(a, "--sort", i, argc, argv))) { set_sort(o, v); return 0; }
 	if ((v = long_val(a, "--gitfile", i, argc, argv))) { o->gitignore = 1; o->gitfile = v; return 0; }

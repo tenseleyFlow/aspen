@@ -48,6 +48,13 @@ if [ -f tests/golden/pty.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# Parallel-stat determinism (Sprint 11b): --threads must not change output.
+if [ -f tests/golden/threads.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/threads.sh; then
+		fail=1
+	fi
+fi
+
 # Golden parity suite (present once tests/golden/run.sh lands).
 if [ -x tests/golden/run.sh ]; then
 	if ! sh tests/golden/run.sh; then
