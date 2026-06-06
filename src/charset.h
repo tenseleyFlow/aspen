@@ -20,4 +20,8 @@ struct linedraw {
 
 const struct linedraw *asp_linedraw(const struct options *o);
 
+/* Effective charset name: --charset/-S, then $TREE_CHARSET, then "UTF-8" in a
+ * UTF-8 locale, else NULL. Used for the XML encoding attribute. */
+const char *asp_charset_name(const struct options *o);
+
 #endif /* ASP_CHARSET_H */

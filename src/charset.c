@@ -83,11 +83,8 @@ static int is_utf8(const char *cs)
 	return cs && (!strcasecmp(cs, "UTF-8") || !strcasecmp(cs, "utf8"));
 }
 
-const struct linedraw *asp_linedraw(const struct options *o)
+const char *asp_charset_name(const struct options *o)
 {
-	if (o->ansilines)
-		return &cstable[0].ld; /* ANSI */
-
 	const char *cs = o->charset; /* --charset / -S */
 	if (!cs)
 		cs = getenv("TREE_CHARSET");
@@ -96,6 +93,15 @@ const struct linedraw *asp_linedraw(const struct options *o)
 		if (is_utf8(codeset))
 			cs = "UTF-8";
 	}
+	return cs;
+}
+
+const struct linedraw *asp_linedraw(const struct options *o)
+{
+	if (o->ansilines)
+		return &cstable[0].ld; /* ANSI */
+
+	const char *cs = asp_charset_name(o);
 
 	if (cs)
 		for (size_t i = 0; i < NCS; i++)

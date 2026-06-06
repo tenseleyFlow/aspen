@@ -16,6 +16,7 @@
 #include "render.h"
 #include "render/json.h"
 #include "render/unix.h"
+#include "render/xml.h"
 #include "sys/dir.h"
 #include "traverse.h"
 #include "util.h"
@@ -96,6 +97,11 @@ int main(int argc, char **argv)
 		json_ctx_init(&j, STDOUT_FILENO, &o);
 		rc = render_tree(roots, &o, &asp_json_renderer, &j, NULL);
 		json_ctx_destroy(&j);
+	} else if (o.format == OUT_XML) {
+		struct xml_ctx x;
+		xml_ctx_init(&x, STDOUT_FILENO, &o);
+		rc = render_tree(roots, &o, &asp_xml_renderer, &x, NULL);
+		xml_ctx_destroy(&x);
 	} else {
 		struct colorizer col;
 		color_init(&col, &o, STDOUT_FILENO);
