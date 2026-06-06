@@ -16,6 +16,7 @@ ref="$work/ref/tree-2.3.2"
 corpus="$work/corpus"
 weird="$work/weird"
 lnk="$work/lnk"
+meta="$work/meta"
 ASP=./aspen
 
 mkdir -p "$work"
@@ -23,6 +24,7 @@ sh "$here/build-ref.sh" 2.3.2 || { echo "GOLDEN: cannot build reference tree"; e
 sh "$here/mkcorpus.sh" "$corpus" >/dev/null
 sh "$here/mkweird.sh" "$weird" >/dev/null
 sh "$here/mklnk.sh" "$lnk" >/dev/null
+sh "$here/mkmeta.sh" "$meta" >/dev/null
 
 # Flag-sets compared; %C = corpus, %W = weird names, %L = symlink/cycle fixture.
 # Contains ONLY behavior aspen implements so far; grows each sprint (never gate on
@@ -50,6 +52,21 @@ CASES='%C
 -lF %L
 -al %L
 -F %L
+-s %M
+-sh %M
+--si %M
+-p %M
+-u %M
+-g %M
+-pugs %M
+--inodes %M
+--device %M
+-D %M
+-cD %M
+--timefmt %F %M
+--metafirst -ps %M
+-F %M
+-ps %W
 -L 0 %C
 -L
 /no/such/path-xyz'
@@ -58,7 +75,7 @@ normprog() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /'; }
 
 run_case() { # <bin> <case-string>
 	_bin=$1
-	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g")
+	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g")
 	_oi=$IFS
 	IFS=' 	'
 	# shellcheck disable=SC2086
