@@ -35,7 +35,7 @@ check "path set (default)" "$work/wk.asp" "$work/wk.ref"
 check "dir set (default)" "$work/wk.dasp" "$work/wk.dref"
 
 # With dotfiles (-a / --all)
-"$ASP" --asp-debug-walk --all "$corpus" | cut -f2- | sort >"$work/wk.aasp"
+"$ASP" --asp-debug-walk -a "$corpus" | cut -f2- | sort >"$work/wk.aasp"
 "$ref" -afi --noreport -n "$corpus" | sed '1d; s/ -> .*//' | sort >"$work/wk.aref"
 check "path set (-a)" "$work/wk.aasp" "$work/wk.aref"
 

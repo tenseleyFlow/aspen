@@ -15,29 +15,50 @@ work=tests/.work
 ref="$work/ref/tree-2.3.2"
 corpus="$work/corpus"
 weird="$work/weird"
+lnk="$work/lnk"
 ASP=./aspen
 
 mkdir -p "$work"
 sh "$here/build-ref.sh" 2.3.2 || { echo "GOLDEN: cannot build reference tree"; exit 1; }
 sh "$here/mkcorpus.sh" "$corpus" >/dev/null
 sh "$here/mkweird.sh" "$weird" >/dev/null
+sh "$here/mklnk.sh" "$lnk" >/dev/null
 
-# Flag-sets compared on the corpus; %C = corpus, %W = weird-names fixture.
-# This list contains ONLY behavior aspen implements so far, and grows each sprint
-# (the honest rule: never gate on un-implemented flags). Deferred cases:
-#   -a -d -F -aF --noreport -L (Sprint 03), -s -p -D ... (Sprint 04), sorts (05) ...
+# Flag-sets compared; %C = corpus, %W = weird names, %L = symlink/cycle fixture.
+# Contains ONLY behavior aspen implements so far; grows each sprint (never gate on
+# un-implemented flags). Deferred: -s -p -u -g -D (Sprint 04), sort modes (05), ...
 CASES='%C
 %C %C
 --charset=ascii %C
 %W
 --charset=ascii %W
+-a %C
+-d %C
+-f %C
+-i %C
+-F %C
+-aF %C
+-L 2 %C
+-L 1 %C
+--noreport %C
+-x %C
+-a %W
+-F %W
+%L
+-d %L
+-l %L
+-lF %L
+-al %L
+-F %L
+-L 0 %C
+-L
 /no/such/path-xyz'
 
 normprog() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /'; }
 
 run_case() { # <bin> <case-string>
 	_bin=$1
-	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g")
+	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g")
 	_oi=$IFS
 	IFS=' 	'
 	# shellcheck disable=SC2086
