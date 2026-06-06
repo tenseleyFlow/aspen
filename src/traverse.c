@@ -490,12 +490,15 @@ static void emit_level(struct wctx *c, struct entry **arr, int depth)
 	}
 }
 
-void asp_walk(const char *root, const struct options *o,
-	      const struct renderer *r, void *ctx, struct totals *tot, int *errors)
+void asp_walk(const char *root, const struct options *o, const struct renderer *r,
+	      void *ctx, struct totals *tot, int *errors, int last_root)
 {
 	struct asp_dir *d;
 	if (asp_diropen(root, &d) != 0) {
-		r->root(ctx, root, 1, NULL);
+		if (r->tree)
+			r->tree(ctx, root, NULL, 0, NULL, tot, last_root);
+		else
+			r->root(ctx, root, 1, NULL);
 		(*errors)++;
 		return;
 	}
@@ -550,7 +553,23 @@ void asp_walk(const char *root, const struct options *o,
 		}
 	}
 
-	if (needfulltree(o)) {
+	if (r->tree) {
+		/* Nested formats (JSON/XML/HTML): build the whole tree, hand it off.
+		 * The renderer counts entries and emits; we just compute the du total. */
+		struct entry **top = build_level(&c, d, 1, 0);
+		if (o->prune)
+			prune_level(top);
+		if (o->duflag) {
+			off_t dusum = du_aggregate(top);
+			if (root_st) {
+				rs.size += dusum;
+				tot->size = rs.size;
+			} else {
+				tot->size = dusum;
+			}
+		}
+		r->tree(ctx, root, root_st, 1, top, tot, last_root);
+	} else if (needfulltree(o)) {
 		struct entry **top = build_level(&c, d, 1, 0);
 		if (o->prune)
 			prune_level(top);

@@ -363,4 +363,5 @@ static void ux_end(void *ctx)
 
 const struct renderer asp_unix_renderer = {
 	ux_begin, ux_root, ux_entry, ux_error, ux_newline, ux_comment, ux_report, ux_end,
+	NULL, /* tree: unix is line-oriented, not nested */
 };

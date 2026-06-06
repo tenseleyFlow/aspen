@@ -21,6 +21,12 @@ struct renderer {
 	void (*comment)(void *ctx, const struct entry *e, int depth); /* --info lines after the entry */
 	void (*report)(void *ctx, const struct totals *t);
 	void (*end)(void *ctx);                         /* document outtro */
+
+	/* Nested formats (JSON/XML/HTML) set this instead of root/entry/.../comment:
+	 * the engine builds the whole tree and hands each root's subtree here. NULL
+	 * for the line-oriented unix renderer. tot is accumulated across roots. */
+	void (*tree)(void *ctx, const char *rootpath, const struct asp_statinfo *st,
+		     int opened, struct entry **top, struct totals *tot, int last_root);
 };
 
 /* Orchestrate over the root list: begin, per-root walk, report, end.

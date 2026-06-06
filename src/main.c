@@ -14,6 +14,7 @@
 #include "entry.h"
 #include "options.h"
 #include "render.h"
+#include "render/json.h"
 #include "render/unix.h"
 #include "sys/dir.h"
 #include "traverse.h"
@@ -54,6 +55,7 @@ static void dbg_entry(void *c, const struct entry *e, const char *path, int dept
 }
 static const struct renderer DEBUG_RENDERER = {
 	dbg_noop, dbg_root, dbg_entry, dbg_error, dbg_newline, dbg_comment, dbg_report, dbg_noop,
+	NULL,
 };
 
 int main(int argc, char **argv)
@@ -89,6 +91,11 @@ int main(int argc, char **argv)
 		struct totals t;
 		rc = render_tree(roots, &o, &DEBUG_RENDERER, NULL, &t);
 		fprintf(stderr, "[debug] %lu directories, %lu files\n", t.dirs, t.files);
+	} else if (o.format == OUT_JSON) {
+		struct json_ctx j;
+		json_ctx_init(&j, STDOUT_FILENO, &o);
+		rc = render_tree(roots, &o, &asp_json_renderer, &j, NULL);
+		json_ctx_destroy(&j);
 	} else {
 		struct colorizer col;
 		color_init(&col, &o, STDOUT_FILENO);

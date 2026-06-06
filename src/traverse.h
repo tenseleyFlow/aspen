@@ -21,7 +21,7 @@ struct renderer; /* render.h */
 
 /* Walk one root's subtree, emitting via the renderer. Prints the root line,
  * counts into *tot (root counts as a dir on success), adds to *errors. */
-void asp_walk(const char *root, const struct options *o,
-	      const struct renderer *r, void *ctx, struct totals *tot, int *errors);
+void asp_walk(const char *root, const struct options *o, const struct renderer *r,
+	      void *ctx, struct totals *tot, int *errors, int last_root);
 
 #endif /* ASP_TRAVERSE_H */

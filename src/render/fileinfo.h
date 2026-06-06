@@ -19,4 +19,9 @@ size_t asp_fillinfo(char *buf, size_t bufsz, const struct options *o,
  * returns the byte count. Exposed for the --du report. */
 int asp_psize(char *buf, const struct options *o, off_t size);
 
+/* ls-style permission string ("drwxr-xr-x"); shared with JSON/XML. */
+const char *asp_prot(mode_t m);
+/* Date string (honors --timefmt / 6-month rule); shared with JSON/XML. */
+const char *asp_do_date(const struct options *o, time_t t);
+
 #endif /* ASP_RENDER_FILEINFO_H */

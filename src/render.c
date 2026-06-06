@@ -9,7 +9,7 @@ int render_tree(const char *const *dirs, const struct options *opts,
 
 	r->begin(ctx);
 	for (size_t i = 0; dirs[i]; i++)
-		asp_walk(dirs[i], opts, r, ctx, &t, &errors);
+		asp_walk(dirs[i], opts, r, ctx, &t, &errors, dirs[i + 1] == NULL);
 	r->report(ctx, &t);
 	r->end(ctx);
 

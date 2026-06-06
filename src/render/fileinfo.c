@@ -10,7 +10,7 @@ static const mode_t ifmt[] = { S_IFREG, S_IFDIR, S_IFLNK, S_IFCHR,
 			       S_IFBLK, S_IFSOCK, S_IFIFO, 0 };
 static const char fmt[] = "-dlcbsp?";
 
-static const char *prot(mode_t m)
+const char *asp_prot(mode_t m)
 {
 	static char buf[11];
 	static const char perms[] = "rwxrwxrwx";
@@ -49,7 +49,7 @@ int asp_psize(char *buf, const struct options *o, off_t size)
 
 #define SIXMONTHS (6 * 31 * 24 * 60 * 60)
 
-static const char *do_date(const struct options *o, time_t t)
+const char *asp_do_date(const struct options *o, time_t t)
 {
 	static char buf[256];
 	struct tm *tm = localtime(&t);
@@ -79,7 +79,7 @@ size_t asp_fillinfo(char *buf, size_t bufsz, const struct options *o,
 	if (o->devflag)
 		n += snprintf(buf + n, bufsz - (size_t)n, " %3d", (int)st->dev);
 	if (o->permflag)
-		n += snprintf(buf + n, bufsz - (size_t)n, " %s", prot(st->mode));
+		n += snprintf(buf + n, bufsz - (size_t)n, " %s", asp_prot(st->mode));
 	if (o->userflag)
 		n += snprintf(buf + n, bufsz - (size_t)n, " %-8.32s", uidtoname(st->uid));
 	if (o->groupflag)
@@ -88,7 +88,7 @@ size_t asp_fillinfo(char *buf, size_t bufsz, const struct options *o,
 		n += asp_psize(buf + n, o, st->size);
 	if (o->dateflag)
 		n += snprintf(buf + n, bufsz - (size_t)n, " %s",
-			      do_date(o, o->ctimeflag ? st->ctime : st->mtime));
+			      asp_do_date(o, o->ctimeflag ? st->ctime : st->mtime));
 
 	if (buf[0] == ' ') {
 		buf[0] = '[';
