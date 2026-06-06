@@ -9,8 +9,12 @@ work=bench/.work
 mkdir -p "$work"
 corpus="$work/corpus"
 ASP=${ASP:-./aspen}
-REF=${REF:-$(command -v tree 2>/dev/null || echo tree)}
 REF232=tests/.work/ref/tree-2.3.2
+# Benchmark against the exact parity target (tree 2.3.2) the golden suite builds:
+# version-precise and present everywhere. A system `tree` is absent on macOS CI
+# (and unknown-version elsewhere). Override REF= to compare against another build.
+[ -x "$REF232" ] || sh tests/golden/build-ref.sh 2.3.2 >/dev/null 2>&1 || true
+REF=${REF:-$REF232}
 
 [ -d "$corpus" ] || sh bench/mkcorpus.sh "$corpus" >/dev/null
 
