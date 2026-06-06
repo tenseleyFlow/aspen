@@ -13,3 +13,6 @@ config.h
 # test/bench scratch
 /tests/.work/
 /bench/.work/
+*.core
+/bench/.work/pgo/
+/bench/.work/*.profdata

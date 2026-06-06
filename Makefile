@@ -21,7 +21,7 @@ SRC = $(wildcard src/*.c src/sys/*.c src/render/*.c)
 OBJ = $(SRC:.c=.o)
 DEP = $(OBJ:.o=.d)
 
-.PHONY: all clean distclean install uninstall test bench fmt analyze release debug
+.PHONY: all clean distclean install uninstall test bench fmt analyze release debug pgo
 
 all: config.h aspen asp
 
@@ -44,6 +44,11 @@ release: clean all
 debug: ALL_CFLAGS += -O0 -g -fsanitize=address,undefined
 debug: LDFLAGS += -fsanitize=address,undefined
 debug: clean all
+
+# Opt-in profile-guided build (clang/llvm). Marginal on this workload, so it is
+# NOT the default release — packaged builds stay plain for reproducibility.
+pgo:
+	@sh bench/pgo.sh
 
 test: all
 	@sh tests/run.sh
