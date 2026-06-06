@@ -14,6 +14,7 @@
 #include "entry.h"
 #include "options.h"
 #include "render.h"
+#include "render/html.h"
 #include "render/json.h"
 #include "render/unix.h"
 #include "render/xml.h"
@@ -102,6 +103,11 @@ int main(int argc, char **argv)
 		xml_ctx_init(&x, STDOUT_FILENO, &o);
 		rc = render_tree(roots, &o, &asp_xml_renderer, &x, NULL);
 		xml_ctx_destroy(&x);
+	} else if (o.format == OUT_HTML) {
+		struct html_ctx hc;
+		html_ctx_init(&hc, STDOUT_FILENO, mb, &o);
+		rc = render_tree(roots, &o, &asp_html_renderer, &hc, NULL);
+		html_ctx_destroy(&hc);
 	} else {
 		struct colorizer col;
 		color_init(&col, &o, STDOUT_FILENO);

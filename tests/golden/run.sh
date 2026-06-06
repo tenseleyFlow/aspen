@@ -34,6 +34,11 @@ sh "$here/mkprune.sh" "$prn" >/dev/null
 sh "$here/mkgign.sh" "$gign" >/dev/null
 sh "$here/mkinfo.sh" "$inf" >/dev/null
 
+# Fixed empty intro/outtro: -H's default document embeds the program name and
+# version (legitimately "aspen", not "tree"), so golden-test the HTML *body* with
+# --hintro/--houtro replacing that version chrome. %h = intro file, %o = outtro.
+: >"$work/hintro"; : >"$work/houtro"
+
 # Flag-sets compared; %C = corpus, %W = weird names, %L = symlink/cycle fixture.
 # Contains ONLY behavior aspen implements so far; grows each sprint (never gate on
 # un-implemented flags). Deferred: -s -p -u -g -D (Sprint 04), sort modes (05), ...
@@ -167,6 +172,24 @@ CASES='%C
 -X --charset=IBM437 %C
 -X %M %C
 -X /no/such/path-xyz
+-H . --hintro=%h --houtro=%o %C
+-H . --hintro=%h --houtro=%o -ph %M
+-H . --hintro=%h --houtro=%o --nolinks %C
+-H . --hintro=%h --houtro=%o %L
+-H . --hintro=%h --houtro=%o --info %I
+-H . --hintro=%h --houtro=%o -C %C
+-H http://x/y --hintro=%h --houtro=%o %M
+-H -base --hintro=%h --houtro=%o %M
+-H . --hintro=%h --houtro=%o -d %C
+-H . --hintro=%h --houtro=%o -a %C
+-H . --hintro=%h --houtro=%o -L 2 %C
+-H . --hintro=%h --houtro=%o -f %C
+-H . --hintro=%h --houtro=%o -fF %C
+-H . --hintro=%h --houtro=%o -Q %C
+-H . --hintro=%h --houtro=%o --du %C
+-H . --hintro=%h --houtro=%o -h --du %C
+-H . --hintro=%h --houtro=%o %M %C
+-H . --hintro=%h --houtro=%o /no/such/path-xyz
 -L 0 %C
 -L
 /no/such/path-xyz'
@@ -175,7 +198,7 @@ normprog() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /'; }
 
 run_case() { # <bin> <case-string>
 	_bin=$1
-	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g; s#%G#$gign#g; s#%I#$inf#g")
+	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g; s#%G#$gign#g; s#%I#$inf#g; s#%h#$work/hintro#g; s#%o#$work/houtro#g")
 	_oi=$IFS
 	IFS=' 	'
 	set -f # no globbing: pattern args like *.txt must reach the binary verbatim
