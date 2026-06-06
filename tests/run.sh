@@ -41,6 +41,13 @@ if [ -x tests/golden/color.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# PTY colorization parity (auto-color on a real terminal; skips if no pty).
+if [ -f tests/golden/pty.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/pty.sh; then
+		fail=1
+	fi
+fi
+
 # Golden parity suite (present once tests/golden/run.sh lands).
 if [ -x tests/golden/run.sh ]; then
 	if ! sh tests/golden/run.sh; then
