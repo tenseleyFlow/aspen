@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          cc --version
+          make --version | head -1
+
+      - name: Configure + build (warnings = errors)
+        run: |
+          ./configure
+          make CFLAGS="-O2 -Werror"
+
+      - name: Unit + golden parity tests
+        run: make test
+
+      - name: Sanitizer build (ASan/UBSan)
+        run: make debug
+
+      - name: Install hyperfine (best-effort)
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then sudo apt-get update -y && sudo apt-get install -y hyperfine || true; fi
+          if [ "$RUNNER_OS" = macOS ]; then brew install hyperfine || true; fi
+
+      - name: Benchmark + perf gate
+        # Gate enforces "faster than tree" once parity is active (Sprint 02);
+        # demo/measurement only before then. Our lead over tree is multi-x, so
+        # shared-runner noise will not flip the verdict.
+        run: make bench
