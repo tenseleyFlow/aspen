@@ -4,6 +4,7 @@
 #include "dstr.h"
 #include "entry.h"
 #include "filter.h"
+#include "fromfile.h"
 #include "glob.h"
 #include "hashtab.h"
 #include "info.h"
@@ -13,6 +14,7 @@
 #include "sys/dir.h"
 #include "sys/xstat.h"
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -490,9 +492,154 @@ static void emit_level(struct wctx *c, struct entry **arr, int depth)
 	}
 }
 
+/* --- --fromfile / --fromtabfile: build entries from a synthetic hierarchy --- */
+
+/* Convert a sibling list of parsed fnodes into an arena entry array, applying
+ * the same listing filters as read_level (-a/-d/-P/-I). Synthetic entries carry
+ * only their type in st->mode (size/time/ids zero), matching tree's newent().
+ *
+ * suppress_pat mirrors tree's fprune `matched`: a directory whose name matches
+ * -P shows its whole subtree unfiltered and is protected from --prune. Unlike
+ * the filesystem walk this is unconditional (not gated on --matchdirs) — a tree
+ * fromfile quirk we reproduce. While suppressed, both -P and -I are skipped. */
+static struct entry **synth_level(struct wctx *c, struct fnode *list, int suppress_pat)
+{
+	const struct options *o = c->o;
+	int need_st = meta_wanted(o) || sort_needs_stat(o) || o->duflag || o->colorize;
+	struct evec ev = { NULL, 0, 0 };
+
+	for (struct fnode *fn = list; fn; fn = fn->next) {
+		int isdir = fn->isdir;
+		enum asp_type t = fn->islink ? ASP_LNK : (isdir ? ASP_DIR : ASP_REG);
+
+		if (!o->all && fn->name[0] == '.')
+			continue;
+		if (o->dirsonly && !isdir)
+			continue;
+
+		int matched_dir = 0;
+		if (!suppress_pat) {
+			if (o->npat) {
+				if (!isdir) {
+					if (!pat_match_any(o->patterns, o->npat, fn->name,
+							   isdir, o->ignorecase))
+						continue; /* files must match -P */
+				} else if (pat_match_any(o->patterns, o->npat, fn->name,
+							 isdir, o->ignorecase)) {
+					matched_dir = 1; /* dir name match -> subtree shows */
+				}
+			}
+			if (o->nipat && pat_match_any(o->ipatterns, o->nipat, fn->name,
+						      isdir, o->ignorecase))
+				continue;
+		}
+
+		struct entry *e = entry_new(&c->arena, fn->name, strlen(fn->name), t);
+		if (matched_dir)
+			e->flags |= ENT_MATCHED; /* prune_level keeps matched dirs */
+		if (fn->islink && fn->lnk)
+			e->lnk = arena_strdup(&c->arena, fn->lnk); /* ltype stays UNKNOWN */
+		if (need_st) {
+			struct asp_statinfo si;
+			memset(&si, 0, sizeof si);
+			si.mode = isdir ? S_IFDIR : (fn->islink ? S_IFLNK : S_IFREG);
+			e->st = arena_memdup(&c->arena, &si, sizeof si);
+		}
+		if (isdir && fn->child) {
+			struct entry **ch = synth_level(c, fn->child,
+							suppress_pat || matched_dir);
+			if (ch[0] != NULL)
+				e->child = ch; /* leave NULL when empty (leaf dir) */
+		}
+		evec_push(&ev, e);
+	}
+
+	struct entry **arr = arena_alloc(&c->arena, (ev.n + 1) * sizeof *arr);
+	for (size_t i = 0; i < ev.n; i++)
+		arr[i] = ev.v[i];
+	arr[ev.n] = NULL;
+	free(ev.v);
+	return arr;
+}
+
+static void asp_walk_fromfile(const char *arg, const struct options *o,
+			      const struct renderer *r, void *ctx,
+			      struct totals *tot, int *errors, int last_root)
+{
+	/* Root metadata is the path-list file's own lstat (".": stdin -> cwd), but
+	 * tree forces the displayed size to 0 (getfulltree zeroes *size). */
+	struct asp_statinfo rs;
+	const struct asp_statinfo *root_st = NULL;
+	if (asp_stat_at(AT_FDCWD, arg, 0, &rs) == 0) {
+		rs.size = 0;
+		root_st = &rs;
+	}
+
+	int open_err = 0;
+	struct fnode *ftop = asp_fromfile_read(arg, o, o->fromtabfile, &open_err);
+
+	/* lstat failure (e.g. a nonexistent path-list) is a hard error, like tree. */
+	if (root_st == NULL) {
+		if (r->tree)
+			r->tree(ctx, arg, NULL, 0, NULL, tot, last_root);
+		else
+			r->root(ctx, arg, 1, NULL);
+		(*errors)++;
+		asp_fnode_free(ftop);
+		return;
+	}
+
+	struct wctx c;
+	arena_init(&c.arena, 0);
+	dstr_init(&c.path);
+	dstr_appendz(&c.path, arg);
+	if (o->fullpath) /* tree strips trailing '/' from the root under -f */
+		while (c.path.len > 1 && c.path.data[c.path.len - 1] == '/') {
+			c.path.len--;
+			c.path.data[c.path.len] = '\0';
+		}
+	c.o = o;
+	c.r = r;
+	c.rctx = ctx;
+	c.tot = tot;
+	c.errors = errors;
+	c.root_dev = 0;
+	c.fstack = NULL;
+	c.istack = NULL;
+	c.info_top = 0;
+	inoset_init(&c.seen);
+
+	struct entry **top = synth_level(&c, ftop, 0);
+	if (o->prune)
+		prune_level(top);
+	if (o->duflag) {
+		off_t dusum = du_aggregate(top);
+		rs.size = dusum; /* tree: root size = aggregate only (not real+sum) */
+		tot->size = dusum;
+	}
+
+	if (r->tree) {
+		r->tree(ctx, arg, root_st, 1, top, tot, last_root);
+	} else {
+		r->root(ctx, arg, 0, root_st);
+		tot->dirs++; /* root counts as a directory */
+		emit_level(&c, top, 1);
+	}
+
+	inoset_destroy(&c.seen);
+	dstr_free(&c.path);
+	arena_destroy(&c.arena);
+	asp_fnode_free(ftop);
+}
+
 void asp_walk(const char *root, const struct options *o, const struct renderer *r,
 	      void *ctx, struct totals *tot, int *errors, int last_root)
 {
+	if (o->fromfile || o->fromtabfile) {
+		asp_walk_fromfile(root, o, r, ctx, tot, errors, last_root);
+		return;
+	}
+
 	struct asp_dir *d;
 	if (asp_diropen(root, &d) != 0) {
 		if (r->tree)
