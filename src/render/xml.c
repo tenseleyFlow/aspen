@@ -259,7 +259,13 @@ static void xml_tree(void *ctx, const char *rootpath, const struct asp_statinfo 
 		return;
 	}
 
-	dstr_appendz(&x->out, "<directory name=\"");
+	/* --fromfile roots take the path-list file's own type; still count as dir. */
+	const char *rtag = (st && !S_ISDIR(st->mode))
+				   ? tag_str(asp_type_from_mode(st->mode))
+				   : "directory";
+	dstr_appendc(&x->out, '<');
+	dstr_appendz(&x->out, rtag);
+	dstr_appendz(&x->out, " name=\"");
 	asp_html_encode(&x->out, rootpath);
 	dstr_appendc(&x->out, '"');
 	xfillinfo(x, st);
@@ -270,7 +276,9 @@ static void xml_tree(void *ctx, const char *rootpath, const struct asp_statinfo 
 	xemit_level(x, top, 1, tot);
 
 	xindent(x, 0);
-	dstr_appendz(&x->out, "</directory>");
+	dstr_appendz(&x->out, "</");
+	dstr_appendz(&x->out, rtag);
+	dstr_appendc(&x->out, '>');
 	dstr_appendz(&x->out, xnl(x));
 	xmaybe(x);
 }

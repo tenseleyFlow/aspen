@@ -271,7 +271,14 @@ static void json_tree(void *ctx, const char *rootpath, const struct asp_statinfo
 		return;
 	}
 
-	dstr_appendz(&j->out, "{\"type\":\"directory\",\"name\":\"");
+	/* Normally the root is a real directory; --fromfile roots take the type of
+	 * the path-list file itself (e.g. "file"), but still count as a directory. */
+	const char *rtype = (st && !S_ISDIR(st->mode))
+				    ? ftype_str(asp_type_from_mode(st->mode))
+				    : "directory";
+	dstr_appendz(&j->out, "{\"type\":\"");
+	dstr_appendz(&j->out, rtype);
+	dstr_appendz(&j->out, "\",\"name\":\"");
 	jenc(&j->out, rootpath);
 	dstr_appendc(&j->out, '"');
 	jfillinfo(j, st);

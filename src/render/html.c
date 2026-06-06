@@ -239,7 +239,9 @@ static void html_root(void *ctx, const char *path, int failed, const struct asp_
 		dstr_appendz(&h->out, "</a>");
 		dstr_appendz(&h->out, "  [error opening dir]");
 	} else {
-		anchor(h, NULL, path, strlen(path), path, 1, 1);
+		/* --fromfile root takes the path-list file's type (no '/' if a file). */
+		int isdir = !st || S_ISDIR(st->mode);
+		anchor(h, NULL, path, strlen(path), path, isdir, 1);
 	}
 	dstr_appendz(&h->out, "<br>\n"); /* root self-terminates, like ux_root's '\n' */
 	hmaybe(h);

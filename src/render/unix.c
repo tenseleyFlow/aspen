@@ -218,10 +218,20 @@ static void ux_root(void *ctx, const char *path, int failed, const struct asp_st
 		color_end(u->col, &u->out);
 	if (u->hyper && !failed)
 		close_hyperlink(u);
-	if (failed)
+	if (failed) {
 		dstr_appendz(&u->out, "  [error opening dir]");
-	else if (u->o->classify && !u->o->dirsonly)
-		dstr_appendc(&u->out, '/'); /* root is a directory (after color reset) */
+	} else if (u->o->classify && !u->o->dirsonly) {
+		/* root is normally a directory ('/'); a --fromfile root takes the
+		 * path-list file's real type, so a file root gets its own suffix. */
+		if (st && !S_ISDIR(st->mode)) {
+			int ex = (st->mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0;
+			char fc = ftype_char(u->o, asp_type_from_mode(st->mode), ex);
+			if (fc)
+				dstr_appendc(&u->out, fc);
+		} else {
+			dstr_appendc(&u->out, '/'); /* root is a directory */
+		}
+	}
 	dstr_appendc(&u->out, '\n');
 	maybe_flush(u);
 }
