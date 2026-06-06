@@ -17,6 +17,12 @@ struct unix_ctx {
 	const struct options *o;
 	struct colorizer *col;
 	const struct linedraw *ld;
+	/* OSC-8 hyperlinks (--hyperlink) */
+	int hyper;
+	const char *scheme;
+	char authority[256];
+	char realbase[4096];
+	size_t pathoffset;
 	unsigned char *last; /* last[depth] = is_last; grows on demand */
 	size_t last_cap;
 };

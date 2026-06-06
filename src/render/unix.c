@@ -5,8 +5,8 @@
 #include "entry.h"
 #include "util.h"
 
+#include <ctype.h>
 #include <errno.h>
-#include <langinfo.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +26,79 @@ void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max,
 	u->ld = asp_linedraw(o);
 	u->last = NULL;
 	u->last_cap = 0;
+
+	u->hyper = o->hyperlink;
+	u->pathoffset = 0;
+	u->realbase[0] = '\0';
+	if (u->hyper) {
+		/* scheme: tree only honors --scheme when the value contains ':'
+		 * (the no-colon branch is a tree bug that never assigns it), so a
+		 * colonless scheme keeps the default file://. Reproduced for parity. */
+		u->scheme = (o->scheme && strchr(o->scheme, ':')) ? o->scheme : "file://";
+		/* authority: --authority ('.' => empty), else hostname */
+		if (o->authority) {
+			snprintf(u->authority, sizeof u->authority, "%s",
+				 strcmp(o->authority, ".") == 0 ? "" : o->authority);
+		} else if (gethostname(u->authority, sizeof u->authority) != 0) {
+			u->authority[0] = '\0';
+		}
+		u->authority[sizeof u->authority - 1] = '\0';
+	}
+}
+
+/* url_encode: whitelist alnum + "/-._~", else %XX (uppercase); returns whether
+ * the last byte was '/'. Ported from tree's html.c url_encode (2.3.2). */
+static int url_encode_n(struct dstr *out, const char *s, size_t n)
+{
+	static const char unreserved[] = "/-._~";
+	int slash = 0;
+	for (size_t i = 0; i < n; i++) {
+		char c = s[i]; /* signed, like tree */
+		if (isalnum((unsigned char)c) || strchr(unreserved, c)) {
+			dstr_appendc(out, c);
+		} else {
+			/* tree passes the signed char to %02X, so high bytes
+			 * sign-extend to %FFFFFFXX — reproduce that exactly. */
+			char b[16];
+			int m = snprintf(b, sizeof b, "%%%02X", c);
+			if (m > 0)
+				dstr_append(out, b, (size_t)m);
+		}
+		slash = (c == '/');
+	}
+	return slash;
+}
+
+/* OSC-8 open, mirroring tree's open_hyperlink(dirname, filename). Builds
+ * scheme://authority:<realbase>/<dirname+offset>/<filename>. */
+static void open_hyperlink(struct unix_ctx *u, const char *dirname, size_t dirnamelen,
+			   const char *filename, size_t filenamelen)
+{
+	size_t off = u->pathoffset;
+	const char *subdir = dirname + off;
+	size_t subdirlen = dirnamelen > off ? dirnamelen - off : 0;
+
+	dstr_appendz(&u->out, "\033]8;;");
+	dstr_appendz(&u->out, u->scheme);
+	url_encode_n(&u->out, u->authority, strlen(u->authority));
+	dstr_appendc(&u->out, ':');
+	int slash = url_encode_n(&u->out, u->realbase, strlen(u->realbase));
+	if (subdirlen) {
+		slash = slash || (subdir[0] == '/');
+		if (!slash)
+			dstr_appendc(&u->out, '/');
+		if (!url_encode_n(&u->out, subdir, subdirlen))
+			dstr_appendc(&u->out, '/');
+	} else if (!slash) {
+		dstr_appendc(&u->out, '/');
+	}
+	url_encode_n(&u->out, filename, filenamelen);
+	dstr_appendz(&u->out, "\033\\");
+}
+
+static void close_hyperlink(struct unix_ctx *u)
+{
+	dstr_appendz(&u->out, "\033]8;;\033\\");
 }
 
 /* tree's Ftype suffix: '/' dir (unless -d), '*' exec reg, '=' sock, '|' fifo. */
@@ -110,13 +183,26 @@ static void emit_info(struct unix_ctx *u, const struct asp_statinfo *st)
 static void ux_root(void *ctx, const char *path, int failed, const struct asp_statinfo *st)
 {
 	struct unix_ctx *u = ctx;
+	size_t plen = strlen(path);
+	if (u->hyper) { /* per-root: resolve absolute base + offset */
+		if (realpath(path, u->realbase) == NULL) {
+			u->realbase[0] = '\0';
+			u->pathoffset = 0;
+		} else {
+			u->pathoffset = plen;
+		}
+	}
 	emit_info(u, st); /* root gets the bracket too (tree) */
+	if (u->hyper && !failed)
+		open_hyperlink(u, path, plen, "", 0);
 	int colored = 0;
 	if (!failed && u->col->enabled && st)
 		colored = color_apply(u->col, &u->out, st->mode, "", 0, 0);
-	name_print(&u->out, path, strlen(path), u->mb_cur_max, u->np_flags);
+	name_print(&u->out, path, plen, u->mb_cur_max, u->np_flags);
 	if (colored)
 		color_end(u->col, &u->out);
+	if (u->hyper && !failed)
+		close_hyperlink(u);
 	if (failed)
 		dstr_appendz(&u->out, "  [error opening dir]");
 	else if (u->o->classify && !u->o->dirsonly)
@@ -141,7 +227,12 @@ static void ux_entry(void *ctx, const struct entry *e, const char *path,
 		emit_info(u, e->st);
 	}
 
-	/* name: colored by target mode if linktargetcolor, else the entry's own. */
+	size_t plen = strlen(path);
+	size_t dirlen = plen - e->namelen - 1; /* path minus "/name" */
+
+	/* name: optional OSC-8 link, then color, then the name. */
+	if (u->hyper)
+		open_hyperlink(u, path, dirlen, e->name, e->namelen);
 	int colored = 0;
 	if (u->col->enabled) {
 		mode_t m = (e->lnk && u->col->linktargetcolor)
@@ -151,11 +242,13 @@ static void ux_entry(void *ctx, const struct entry *e, const char *path,
 				      e->flags & ENT_ORPHAN, 0);
 	}
 	if (o->fullpath)
-		name_print(&u->out, path, strlen(path), u->mb_cur_max, u->np_flags);
+		name_print(&u->out, path, plen, u->mb_cur_max, u->np_flags);
 	else
 		name_print(&u->out, e->name, e->namelen, u->mb_cur_max, u->np_flags);
 	if (colored)
 		color_end(u->col, &u->out);
+	if (u->hyper)
+		close_hyperlink(u);
 
 	/* -F suffix for non-links goes after the color reset. */
 	if (o->classify && !e->lnk) {
@@ -166,6 +259,8 @@ static void ux_entry(void *ctx, const struct entry *e, const char *path,
 
 	if (e->lnk) {
 		dstr_appendz(&u->out, " -> ");
+		if (u->hyper)
+			open_hyperlink(u, path, dirlen, e->name, e->namelen);
 		int lc = 0;
 		if (u->col->enabled)
 			lc = color_apply(u->col, &u->out, e->lmode, e->lnk,
@@ -173,6 +268,8 @@ static void ux_entry(void *ctx, const struct entry *e, const char *path,
 		name_print(&u->out, e->lnk, strlen(e->lnk), u->mb_cur_max, u->np_flags);
 		if (lc)
 			color_end(u->col, &u->out);
+		if (u->hyper)
+			close_hyperlink(u);
 		if (o->classify) {
 			char s = ftype_char(o, (enum asp_type)e->ltype, e->flags & ENT_LEXEC);
 			if (s)
