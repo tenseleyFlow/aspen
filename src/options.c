@@ -40,7 +40,7 @@ static void die_invalid_short(char c)
 static const char *need_arg(int *i, int argc, char **argv, const char *what)
 {
 	if (*i + 1 >= argc) {
-		char buf[64];
+		char buf[128]; /* fits the 28-char literal + any option name */
 		snprintf(buf, sizeof buf, "Missing argument to %s option.", what);
 		die_msg(buf);
 	}

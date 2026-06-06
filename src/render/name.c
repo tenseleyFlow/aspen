@@ -61,7 +61,9 @@ void name_print(struct dstr *out, const char *s, size_t len, int mb_cur_max, int
 			char mb[MB_LEN_MAX];
 			if (flags & NP_QUOTE)
 				dstr_appendc(out, '"');
-			(void)wctomb(NULL, 0); /* reset shift state; result unused */
+			/* reset shift state; gcc's warn_unused_result ignores a
+			 * (void) cast, so consume the value in a condition instead. */
+			if (wctomb(NULL, 0)) { /* stateful encoding — nothing to do */ }
 			for (size_t i = 0; i < k; i++) {
 				if (iswprint((wint_t)ws[i])) {
 					int n = wctomb(mb, ws[i]);
