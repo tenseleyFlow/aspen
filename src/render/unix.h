@@ -4,6 +4,7 @@
 /* The default (unix) output renderer. */
 
 #include "dstr.h"
+#include "options.h"
 #include "render.h"
 
 struct linedraw {
@@ -16,13 +17,13 @@ struct unix_ctx {
 	struct dstr out;
 	int fd;
 	int mb_cur_max;
+	const struct options *o;
 	const struct linedraw *ld;
 	unsigned char *last; /* last[depth] = is_last; grows on demand */
 	size_t last_cap;
 };
 
-/* charset_name may be NULL (auto-detect via env/locale). */
-void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max, const char *charset_name);
+void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max, const struct options *o);
 void unix_ctx_destroy(struct unix_ctx *u);
 
 extern const struct renderer asp_unix_renderer;

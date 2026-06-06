@@ -36,14 +36,27 @@ static const struct linedraw *pick_linedraw(const char *charset_name)
 	return is_utf8(cs) ? &LD_UTF8 : &LD_ASCII;
 }
 
-void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max, const char *charset_name)
+void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max, const struct options *o)
 {
 	dstr_init(&u->out);
 	u->fd = fd;
 	u->mb_cur_max = mb_cur_max;
-	u->ld = pick_linedraw(charset_name);
+	u->o = o;
+	u->ld = pick_linedraw(o->charset);
 	u->last = NULL;
 	u->last_cap = 0;
+}
+
+/* tree's Ftype suffix: '/' dir (unless -d), '*' exec reg, '=' sock, '|' fifo. */
+static char ftype_char(const struct options *o, enum asp_type t, int exe)
+{
+	switch (t) {
+	case ASP_DIR:  return o->dirsonly ? 0 : '/';
+	case ASP_SOCK: return '=';
+	case ASP_FIFO: return '|';
+	case ASP_REG:  return exe ? '*' : 0;
+	default:       return 0;
+	}
 }
 
 void unix_ctx_destroy(struct unix_ctx *u)
@@ -109,6 +122,8 @@ static void ux_root(void *ctx, const char *path, int failed)
 	name_print(&u->out, path, strlen(path), u->mb_cur_max);
 	if (failed)
 		dstr_appendz(&u->out, "  [error opening dir]");
+	else if (u->o->classify && !u->o->dirsonly)
+		dstr_appendc(&u->out, '/'); /* root is a directory */
 	dstr_appendc(&u->out, '\n');
 	maybe_flush(u);
 }
@@ -117,12 +132,27 @@ static void ux_entry(void *ctx, const struct entry *e, const char *path,
 		     int depth, int is_last)
 {
 	struct unix_ctx *u = ctx;
-	(void)path;
-	draw_indent(u, depth, is_last);
-	name_print(&u->out, e->name, e->namelen, u->mb_cur_max);
+	const struct options *o = u->o;
+
+	if (!o->noindent)
+		draw_indent(u, depth, is_last);
+
+	if (o->fullpath)
+		name_print(&u->out, path, strlen(path), u->mb_cur_max);
+	else
+		name_print(&u->out, e->name, e->namelen, u->mb_cur_max);
+
 	if (e->lnk) {
 		dstr_appendz(&u->out, " -> ");
 		name_print(&u->out, e->lnk, strlen(e->lnk), u->mb_cur_max);
+	}
+
+	if (o->classify) {
+		char s = e->lnk
+			? ftype_char(o, (enum asp_type)e->ltype, e->flags & ENT_LEXEC)
+			: ftype_char(o, (enum asp_type)e->type, e->flags & ENT_EXEC);
+		if (s)
+			dstr_appendc(&u->out, s);
 	}
 	maybe_flush(u);
 }
@@ -146,10 +176,17 @@ static void ux_report(void *ctx, const struct totals *t)
 {
 	struct unix_ctx *u = ctx;
 	char b[96];
+	int n;
+	if (u->o->noreport)
+		return;
 	dstr_appendc(&u->out, '\n');
-	int n = snprintf(b, sizeof b, "%lu director%s, %lu file%s\n",
-			 t->dirs, t->dirs == 1 ? "y" : "ies",
-			 t->files, t->files == 1 ? "" : "s");
+	if (u->o->dirsonly)
+		n = snprintf(b, sizeof b, "%lu director%s\n",
+			     t->dirs, t->dirs == 1 ? "y" : "ies");
+	else
+		n = snprintf(b, sizeof b, "%lu director%s, %lu file%s\n",
+			     t->dirs, t->dirs == 1 ? "y" : "ies",
+			     t->files, t->files == 1 ? "" : "s");
 	dstr_append(&u->out, b, (size_t)n);
 }
 

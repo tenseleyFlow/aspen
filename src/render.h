@@ -23,7 +23,7 @@ struct renderer {
 
 /* Orchestrate over the root list: begin, per-root walk, report, end.
  * Returns the process exit code (0 ok, 2 if any open/stat failed). */
-int render_tree(const char *const *dirs, const struct walk_opts *opts,
+int render_tree(const char *const *dirs, const struct options *opts,
 		const struct renderer *r, void *ctx, struct totals *tot);
 
 #endif /* ASP_RENDER_H */

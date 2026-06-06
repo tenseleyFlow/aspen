@@ -3,22 +3,27 @@
 #include "arena.h"
 #include "dstr.h"
 #include "entry.h"
+#include "hashtab.h"
+#include "options.h"
 #include "util.h"
 #include "sys/dir.h"
 #include "sys/xstat.h"
 
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 struct wctx {
 	struct arena arena;
-	struct dstr path; /* current path, no trailing slash */
-	const struct walk_opts *opts;
+	struct dstr path;
+	const struct options *o;
 	const struct renderer *r;
 	void *rctx;
 	struct totals *tot;
 	int *errors;
+	struct inoset seen; /* -l cycle detection */
+	dev_t root_dev;
 };
 
 struct evec {
@@ -42,21 +47,24 @@ static void evec_push(struct evec *ev, struct entry *e)
 	ev->v[ev->n++] = e;
 }
 
-static int needs_stat(enum asp_type t, const struct walk_opts *o)
+static int is_exec(mode_t m)
 {
-	if (t == ASP_UNKNOWN)
+	return (m & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0;
+}
+
+/* Non-symlink entries stat only when a flag needs the metadata. (Symlinks are
+ * always stat-followed below, because tree counts/classifies them by target.) */
+static int nonlink_needs_stat(enum asp_type t, const struct options *o)
+{
+	if (o->classify && t == ASP_REG) /* exec bit for '*' */
 		return 1;
-	if (o->stat_mask)
+	if (o->xdev && t == ASP_DIR) /* device id for -x descent */
 		return 1;
-	if (o->one_fs)
-		return 1;
-	if (o->follow_links && t == ASP_LNK)
+	if (o->follow && t == ASP_DIR) /* inode/dev for -l cycle set */
 		return 1;
 	return 0;
 }
 
-/* Fill e->lnk with the symlink target (or tree's exact error string). readlink
- * is required output data, not a stat — it does not break the no-stat fast path. */
 static void fill_link(struct wctx *c, int dirfd, struct entry *e)
 {
 	char buf[4096];
@@ -75,36 +83,79 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 	size_t pathlen = c->path.len;
 	struct evec ev = { NULL, 0, 0 };
 	struct asp_dirent de;
+	const struct options *o = c->o;
 	int r;
+	int dirfd = asp_dirfd(d);
 
 	while ((r = asp_dirread(d, &de)) == 1) {
-		if (!c->opts->all && de.name[0] == '.')
+		if (!o->all && de.name[0] == '.')
 			continue;
 
 		enum asp_type t = de.type;
-		if (needs_stat(t, c->opts)) {
-			struct asp_statinfo si;
-			if (asp_stat_at(asp_dirfd(d), de.name, 0, &si) == 0) {
-				if (t == ASP_UNKNOWN)
-					t = asp_type_from_mode(si.mode);
+		struct asp_statinfo si;
+		int have_si = 0;
+
+		/* Resolve an unknown d_type via lstat. */
+		if (t == ASP_UNKNOWN) {
+			if (asp_stat_at(dirfd, de.name, 0, &si) == 0) {
+				have_si = 1;
+				t = asp_type_from_mode(si.mode);
+			} else {
+				(*c->errors)++;
+				continue; /* tree drops entries whose stat fails */
+			}
+		}
+
+		struct entry *e = entry_new(&c->arena, de.name, strlen(de.name), t);
+		if (have_si) {
+			e->flags |= ENT_STATTED;
+			e->ino = si.ino;
+			e->dev = si.dev;
+			if (t == ASP_REG && is_exec(si.mode))
+				e->flags |= ENT_EXEC;
+		}
+
+		if (t == ASP_LNK) {
+			fill_link(c, dirfd, e);
+			/* Always stat-follow: tree's getinfo always does, so a symlink
+			 * to a directory is counted/classified as a directory in every
+			 * mode. Costs one stat per symlink (tree pays it too); regular
+			 * files and dirs stay stat-free. */
+			struct asp_statinfo ts;
+			if (asp_stat_at(dirfd, de.name, 1, &ts) == 0) {
+				e->ltype = (uint16_t)asp_type_from_mode(ts.mode);
+				if (e->ltype == ASP_REG && is_exec(ts.mode))
+					e->flags |= ENT_LEXEC;
+				e->ino = ts.ino; /* target identity for -l cycle */
+				e->dev = ts.dev;
+			} else {
+				e->flags |= ENT_ORPHAN;
+			}
+		} else if (!have_si && nonlink_needs_stat(t, o)) {
+			if (asp_stat_at(dirfd, de.name, 0, &si) == 0) {
+				e->flags |= ENT_STATTED;
+				e->ino = si.ino;
+				e->dev = si.dev;
+				if (t == ASP_REG && is_exec(si.mode))
+					e->flags |= ENT_EXEC;
 			} else {
 				(*c->errors)++;
 				continue;
 			}
 		}
 
-		struct entry *e = entry_new(&c->arena, de.name, strlen(de.name), t);
-		if (t == ASP_LNK)
-			fill_link(c, asp_dirfd(d), e);
+		/* -d keeps only directory-like entries (incl. symlink-to-dir, like tree). */
+		if (o->dirsonly &&
+		    !(t == ASP_DIR || (t == ASP_LNK && e->ltype == ASP_DIR)))
+			continue;
+
 		evec_push(&ev, e);
 	}
 	if (r < 0)
 		(*c->errors)++;
 
-	/* Default alphabetical sort (tree's alnumsort = strcoll). The other sort
-	 * modes (-v/-t/-c/-U/-r, dirsfirst) and the strxfrm key-cache optimization
-	 * are Sprint 05; the default ordering is required for default parity. */
-	qsort(ev.v, ev.n, sizeof *ev.v, cmp_name);
+	if (o->sort != SORT_NONE)
+		qsort(ev.v, ev.n, sizeof *ev.v, cmp_name);
 
 	for (size_t i = 0; i < ev.n; i++) {
 		struct entry *e = ev.v[i];
@@ -113,16 +164,40 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		dstr_appendc(&c->path, '/');
 		dstr_append(&c->path, e->name, e->namelen);
 
-		if (e->type == ASP_DIR)
+		/* A symlink to a directory counts as a directory (tree, all modes). */
+		int dir_like = e->type == ASP_DIR ||
+			(e->type == ASP_LNK && e->ltype == ASP_DIR);
+		if (dir_like)
 			c->tot->dirs++;
 		else
 			c->tot->files++;
 
 		c->r->entry(c->rctx, e, c->path.data, depth, is_last);
 
-		if (e->type == ASP_DIR) {
+		/* descent decision */
+		int descend = 0;
+		const char *post_err = NULL;
+		if (e->type == ASP_DIR)
+			descend = 1;
+		else if (o->follow && e->type == ASP_LNK && e->ltype == ASP_DIR)
+			descend = 1;
+
+		if (descend && o->level >= 0 && depth >= o->level)
+			descend = 0;
+		if (descend && o->xdev && e->type == ASP_DIR && e->dev != c->root_dev)
+			descend = 0;
+		if (descend && o->follow) {
+			if (inoset_has(&c->seen, e->ino, e->dev)) {
+				post_err = "recursive, not followed";
+				descend = 0;
+			} else {
+				inoset_add(&c->seen, e->ino, e->dev);
+			}
+		}
+
+		if (descend) {
 			struct asp_dir *cd;
-			if (asp_diropen_at(asp_dirfd(d), e->name, &cd) == 0) {
+			if (asp_diropen_at(dirfd, e->name, &cd) == 0) {
 				c->r->newline(c->rctx);
 				walk_dir(c, cd, depth + 1);
 				asp_dirclose(cd);
@@ -132,6 +207,8 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 				(*c->errors)++;
 			}
 		} else {
+			if (post_err)
+				c->r->error(c->rctx, post_err);
 			c->r->newline(c->rctx);
 		}
 
@@ -143,17 +220,17 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 	arena_rewind(&c->arena, mk);
 }
 
-void asp_walk(const char *root, const struct walk_opts *opts,
+void asp_walk(const char *root, const struct options *o,
 	      const struct renderer *r, void *ctx, struct totals *tot, int *errors)
 {
 	struct asp_dir *d;
 	if (asp_diropen(root, &d) != 0) {
-		r->root(ctx, root, 1); /* failed: renderer prints the error marker */
+		r->root(ctx, root, 1);
 		(*errors)++;
 		return;
 	}
 	r->root(ctx, root, 0);
-	tot->dirs++; /* root counts as a directory */
+	tot->dirs++;
 
 	struct wctx c;
 	arena_init(&c.arena, 0);
@@ -163,15 +240,26 @@ void asp_walk(const char *root, const struct walk_opts *opts,
 		c.path.len--;
 		c.path.data[c.path.len] = '\0';
 	}
-	c.opts = opts;
+	c.o = o;
 	c.r = r;
 	c.rctx = ctx;
 	c.tot = tot;
 	c.errors = errors;
+	c.root_dev = 0;
+	inoset_init(&c.seen);
+
+	if (o->xdev || o->follow) {
+		struct asp_statinfo rs;
+		if (asp_stat_at(asp_dirfd(d), ".", 1, &rs) == 0) {
+			c.root_dev = rs.dev;
+			inoset_add(&c.seen, rs.ino, rs.dev);
+		}
+	}
 
 	walk_dir(&c, d, 1);
 
 	asp_dirclose(d);
+	inoset_destroy(&c.seen);
 	dstr_free(&c.path);
 	arena_destroy(&c.arena);
 }

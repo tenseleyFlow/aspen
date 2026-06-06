@@ -1,7 +1,7 @@
 #include "render.h"
 #include "traverse.h"
 
-int render_tree(const char *const *dirs, const struct walk_opts *opts,
+int render_tree(const char *const *dirs, const struct options *opts,
 		const struct renderer *r, void *ctx, struct totals *tot)
 {
 	int errors = 0;
