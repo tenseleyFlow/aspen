@@ -11,20 +11,26 @@
 #include "sys/dir.h" /* enum asp_type */
 
 #include <stdint.h>
+#include <sys/types.h>
 
 enum {
 	ENT_STATTED = 1u << 0,
 	ENT_ORPHAN  = 1u << 1, /* dangling symlink */
-	ENT_EXEC    = 1u << 2,
+	ENT_EXEC    = 1u << 2, /* regular file is executable (-F) */
+	ENT_LEXEC   = 1u << 3, /* symlink target is executable (-F) */
 };
 
 struct entry {
 	uint32_t namelen;
-	uint16_t type;  /* enum asp_type */
+	uint16_t type;  /* enum asp_type (from d_type/lstat) */
+	uint16_t ltype; /* symlink target type when stat-followed, else ASP_UNKNOWN */
 	uint16_t flags;
-	char *lnk;              /* symlink target, or NULL */
-	struct entry **child;   /* full-tree mode only; NULL while streaming */
-	char name[];            /* inline, NUL-terminated */
+	uint16_t _pad;
+	ino_t ino;            /* identity for cycle/xdev (filled when statted) */
+	dev_t dev;
+	char *lnk;            /* symlink target string, or NULL */
+	struct entry **child; /* full-tree mode only; NULL while streaming */
+	char name[];          /* inline, NUL-terminated */
 };
 
 struct entry *entry_new(struct arena *a, const char *name, size_t namelen,
