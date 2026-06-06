@@ -96,16 +96,21 @@ static void fill_link(struct wctx *c, int dirfd, struct entry *e)
 	e->lnk = arena_strdup(&c->arena, buf);
 }
 
-static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
+/* Modes that need the whole tree built before emitting. (--fromfile: Sprint 10) */
+static int needfulltree(const struct options *o)
 {
-	struct arena_marker mk = arena_mark(&c->arena);
-	size_t pathlen = c->path.len;
-	struct evec ev = { NULL, 0, 0 };
-	struct asp_dirent de;
+	return o->duflag || o->prune || o->matchdirs;
+}
+
+/* Read one directory's entries into ev (entries from the arena). suppress_pat
+ * disables -P for this level (--matchdirs on a name-matched directory). */
+static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int suppress_pat)
+{
 	const struct options *o = c->o;
 	int want_st = meta_wanted(o) || sort_needs_stat(o) || o->colorize;
-	int r;
 	int dirfd = asp_dirfd(d);
+	struct asp_dirent de;
+	int r;
 
 	while ((r = asp_dirread(d, &de)) == 1) {
 		if (!o->all && de.name[0] == '.')
@@ -141,17 +146,13 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 
 		if (t == ASP_LNK) {
 			fill_link(c, dirfd, e);
-			/* Always stat-follow: tree's getinfo always does, so a symlink
-			 * to a directory is counted/classified as a directory in every
-			 * mode. Costs one stat per symlink (tree pays it too); regular
-			 * files and dirs stay stat-free. */
 			struct asp_statinfo ts;
 			if (asp_stat_at(dirfd, de.name, 1, &ts) == 0) {
 				e->ltype = (uint16_t)asp_type_from_mode(ts.mode);
-				e->lmode = ts.mode; /* for color / -F of the target */
+				e->lmode = ts.mode;
 				if (e->ltype == ASP_REG && is_exec(ts.mode))
 					e->flags |= ENT_LEXEC;
-				e->ino = ts.ino; /* target identity for -l cycle */
+				e->ino = ts.ino;
 				e->dev = ts.dev;
 			} else {
 				e->flags |= ENT_ORPHAN;
@@ -160,25 +161,34 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 
 		int isdir = (t == ASP_DIR) || (t == ASP_LNK && e->ltype == ASP_DIR);
 
-		/* -P include applies to non-directories only (a real dir always passes
-		 * so we can descend), unless -l makes a symlink dir-like. -I exclude
+		/* -P applies to non-dirs only (dirs always pass so we can descend),
+		 * unless -l makes a symlink dir-like; suppressed by --matchdirs. -I
 		 * applies to everything. Names match by basename (tree). */
-		if (o->npat &&
+		if (!suppress_pat && o->npat &&
 		    t != ASP_DIR && !(o->follow && t == ASP_LNK && e->ltype == ASP_DIR) &&
 		    !pat_match_any(o->patterns, o->npat, de.name, isdir, o->ignorecase))
 			continue;
 		if (o->nipat &&
 		    pat_match_any(o->ipatterns, o->nipat, de.name, isdir, o->ignorecase))
 			continue;
-
-		/* -d keeps only directory-like entries (incl. symlink-to-dir, like tree). */
 		if (o->dirsonly && !isdir)
 			continue;
 
-		evec_push(&ev, e);
+		evec_push(ev, e);
 	}
 	if (r < 0)
 		(*c->errors)++;
+}
+
+static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
+{
+	struct arena_marker mk = arena_mark(&c->arena);
+	size_t pathlen = c->path.len;
+	struct evec ev = { NULL, 0, 0 };
+	const struct options *o = c->o;
+	int dirfd = asp_dirfd(d);
+
+	read_level(c, d, &ev, 0);
 
 	asp_sort(ev.v, ev.n, o);
 
@@ -245,6 +255,143 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 	arena_rewind(&c->arena, mk);
 }
 
+/* Build the full subtree of an open directory into arena entries (->child set
+ * for descended dirs). du aggregation happens later (post-prune). */
+static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
+				  int suppress_pat)
+{
+	const struct options *o = c->o;
+	struct evec ev = { NULL, 0, 0 };
+	int dirfd = asp_dirfd(d);
+
+	read_level(c, d, &ev, suppress_pat);
+
+	for (size_t i = 0; i < ev.n; i++) {
+		struct entry *e = ev.v[i];
+		int dir_like = e->type == ASP_DIR || (e->type == ASP_LNK && e->ltype == ASP_DIR);
+
+		/* --matchdirs: a dir whose name matches -P shows its contents
+		 * unfiltered and is protected from --prune. */
+		int child_suppress = suppress_pat;
+		if (o->matchdirs && o->npat && dir_like &&
+		    pat_match_any(o->patterns, o->npat, e->name, 1, o->ignorecase)) {
+			e->flags |= ENT_MATCHED;
+			child_suppress = 1;
+		}
+
+		int descend = (e->type == ASP_DIR) ||
+			(o->follow && e->type == ASP_LNK && e->ltype == ASP_DIR);
+		const char *post_err = NULL;
+		if (descend && o->level >= 0 && depth >= o->level)
+			descend = 0;
+		if (descend && o->xdev && e->type == ASP_DIR && e->dev != c->root_dev)
+			descend = 0;
+		if (descend && o->follow) {
+			if (inoset_has(&c->seen, e->ino, e->dev)) {
+				post_err = "recursive, not followed";
+				descend = 0;
+			} else {
+				inoset_add(&c->seen, e->ino, e->dev);
+			}
+		}
+
+		if (descend) {
+			struct asp_dir *cd;
+			if (asp_diropen_at(dirfd, e->name, &cd) == 0) {
+				e->child = build_level(c, cd, depth + 1, child_suppress);
+				asp_dirclose(cd);
+			} else {
+				e->err = "error opening dir";
+				(*c->errors)++;
+			}
+		} else if (post_err) {
+			e->err = post_err;
+		}
+	}
+
+	struct entry **arr = arena_alloc(&c->arena, (ev.n + 1) * sizeof *arr);
+	for (size_t i = 0; i < ev.n; i++)
+		arr[i] = ev.v[i];
+	arr[ev.n] = NULL;
+	free(ev.v);
+	return arr;
+}
+
+/* Bottom-up --prune of empty directories (not --matchdirs-protected). */
+static void prune_level(struct entry **arr)
+{
+	size_t n = 0, w = 0;
+	while (arr[n])
+		n++;
+	for (size_t i = 0; i < n; i++) {
+		struct entry *e = arr[i];
+		int dir_like = e->type == ASP_DIR || (e->type == ASP_LNK && e->ltype == ASP_DIR);
+		if (dir_like && e->child)
+			prune_level(e->child);
+		int empty = dir_like && (!e->child || e->child[0] == NULL);
+		if (empty && !(e->flags & ENT_MATCHED))
+			continue; /* drop empty dir */
+		arr[w++] = e;
+	}
+	arr[w] = NULL;
+}
+
+/* --du: bottom-up size aggregation over the (post-prune) tree. Each directory's
+ * displayed size becomes its own inode size plus the sum of its contents, like
+ * tree (which accumulates into the dir's st_size). Returns this level's total. */
+static off_t du_aggregate(struct entry **arr)
+{
+	off_t sum = 0;
+	for (size_t i = 0; arr[i]; i++) {
+		struct entry *e = arr[i];
+		int dir_like = e->type == ASP_DIR || (e->type == ASP_LNK && e->ltype == ASP_DIR);
+		if (dir_like && e->child && e->st)
+			((struct asp_statinfo *)e->st)->size += du_aggregate(e->child);
+		if (e->st)
+			sum += e->st->size;
+	}
+	return sum;
+}
+
+/* Emit a pre-built level (full-tree mode). */
+static void emit_level(struct wctx *c, struct entry **arr, int depth)
+{
+	const struct options *o = c->o;
+	size_t pathlen = c->path.len;
+	size_t n = 0;
+	while (arr[n])
+		n++;
+	asp_sort(arr, n, o);
+
+	for (size_t i = 0; i < n; i++) {
+		struct entry *e = arr[i];
+		int is_last = (i + 1 == n);
+
+		dstr_appendc(&c->path, '/');
+		dstr_append(&c->path, e->name, e->namelen);
+
+		int dir_like = e->type == ASP_DIR || (e->type == ASP_LNK && e->ltype == ASP_DIR);
+		if (dir_like)
+			c->tot->dirs++;
+		else
+			c->tot->files++;
+
+		c->r->entry(c->rctx, e, c->path.data, depth, is_last);
+
+		if (e->child) {
+			c->r->newline(c->rctx);
+			emit_level(c, e->child, depth + 1);
+		} else {
+			if (e->err)
+				c->r->error(c->rctx, e->err);
+			c->r->newline(c->rctx);
+		}
+
+		c->path.len = pathlen;
+		c->path.data[pathlen] = '\0';
+	}
+}
+
 void asp_walk(const char *root, const struct options *o,
 	      const struct renderer *r, void *ctx, struct totals *tot, int *errors)
 {
@@ -283,10 +430,27 @@ void asp_walk(const char *root, const struct options *o,
 		}
 	}
 
-	r->root(ctx, root, 0, root_st);
-	tot->dirs++;
-
-	walk_dir(&c, d, 1);
+	if (needfulltree(o)) {
+		struct entry **top = build_level(&c, d, 1, 0);
+		if (o->prune)
+			prune_level(top);
+		if (o->duflag) {
+			off_t dusum = du_aggregate(top);
+			if (root_st) { /* root total = root's own size + contents */
+				rs.size += dusum;
+				tot->size = rs.size;
+			} else {
+				tot->size = dusum;
+			}
+		}
+		r->root(ctx, root, 0, root_st);
+		tot->dirs++;
+		emit_level(&c, top, 1);
+	} else {
+		r->root(ctx, root, 0, root_st);
+		tot->dirs++;
+		walk_dir(&c, d, 1);
+	}
 
 	asp_dirclose(d);
 	inoset_destroy(&c.seen);

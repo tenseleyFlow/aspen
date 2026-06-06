@@ -14,6 +14,7 @@
 struct totals {
 	unsigned long dirs;
 	unsigned long files;
+	off_t size; /* --du: accumulated byte total */
 };
 
 struct renderer; /* render.h */

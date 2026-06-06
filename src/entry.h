@@ -19,6 +19,7 @@ enum {
 	ENT_ORPHAN  = 1u << 1, /* dangling symlink */
 	ENT_EXEC    = 1u << 2, /* regular file is executable (-F) */
 	ENT_LEXEC   = 1u << 3, /* symlink target is executable (-F) */
+	ENT_MATCHED = 1u << 4, /* --matchdirs: dir name matched -P (prune-protected) */
 };
 
 struct entry {
@@ -32,7 +33,8 @@ struct entry {
 	mode_t lmode;         /* symlink target mode (for color/-F), when followed */
 	const struct asp_statinfo *st; /* lstat info for -s/-p/-u/-g/-D columns; NULL otherwise */
 	char *lnk;            /* symlink target string, or NULL */
-	struct entry **child; /* full-tree mode only; NULL while streaming */
+	struct entry **child; /* full-tree mode: NULL-terminated child array, or NULL */
+	const char *err;      /* full-tree mode: per-entry error to render, or NULL */
 	char name[];          /* inline, NUL-terminated */
 };
 

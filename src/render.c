@@ -5,7 +5,7 @@ int render_tree(const char *const *dirs, const struct options *opts,
 		const struct renderer *r, void *ctx, struct totals *tot)
 {
 	int errors = 0;
-	struct totals t = { 0, 0 };
+	struct totals t = { 0, 0, 0 };
 
 	r->begin(ctx);
 	for (size_t i = 0; dirs[i]; i++)
