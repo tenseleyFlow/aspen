@@ -302,6 +302,13 @@ static void ux_report(void *ctx, const struct totals *t)
 	if (u->o->noreport)
 		return;
 	dstr_appendc(&u->out, '\n');
+	if (u->o->duflag) {
+		char sb[64];
+		asp_psize(sb, u->o, t->size); /* leading-space form, like tree */
+		dstr_appendz(&u->out, sb);
+		dstr_appendz(&u->out, (u->o->humanflag || u->o->siflag) ? " used in "
+								       : " bytes used in ");
+	}
 	if (u->o->dirsonly)
 		n = snprintf(b, sizeof b, "%lu director%s\n",
 			     t->dirs, t->dirs == 1 ? "y" : "ies");

@@ -15,4 +15,8 @@
 size_t asp_fillinfo(char *buf, size_t bufsz, const struct options *o,
 		    const struct asp_statinfo *st);
 
+/* Format a size into buf (tree's psize: " %4d"/" %3.1fK"/" %11lld" forms);
+ * returns the byte count. Exposed for the --du report. */
+int asp_psize(char *buf, const struct options *o, off_t size);
+
 #endif /* ASP_RENDER_FILEINFO_H */

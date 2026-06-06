@@ -28,7 +28,7 @@ static const char *prot(mode_t m)
 	return buf;
 }
 
-static int psize(char *buf, const struct options *o, off_t size)
+int asp_psize(char *buf, const struct options *o, off_t size)
 {
 	static const char iec[] = "BKMGTPEZY", si[] = "dkMGTPEZY";
 	const char *unit = o->siflag ? si : iec;
@@ -85,7 +85,7 @@ size_t asp_fillinfo(char *buf, size_t bufsz, const struct options *o,
 	if (o->groupflag)
 		n += snprintf(buf + n, bufsz - (size_t)n, " %-8.32s", gidtoname(st->gid));
 	if (o->sizeflag)
-		n += psize(buf + n, o, st->size);
+		n += asp_psize(buf + n, o, st->size);
 	if (o->dateflag)
 		n += snprintf(buf + n, bufsz - (size_t)n, " %s",
 			      do_date(o, o->ctimeflag ? st->ctime : st->mtime));
