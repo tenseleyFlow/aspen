@@ -29,12 +29,19 @@ fi
 
 LSC="LS_COLORS=di=01;34:ln=01;36:ex=01;32:or=40;31;01:so=01;35:*.txt=00;33:*.log=00;31:"
 
+# Normalize away the pty's own line-discipline artifacts, which belong to neither
+# program: ONLCR adds \r (we emit none), and some OS ptys append a stray blank
+# line at a buffer/EOF boundary (seen on macOS CI, not Linux/FreeBSD/newer macOS).
+# The exact bytes are already gated by the golden suite (file-redirected); this
+# test's job is that isatty->auto-color matches, i.e. the colored content lines.
+norm() { tr -d '\r' | sed '/^$/d'; }
+
 chk() { # <desc> <env-string> <args...>
 	_d=$1; _env=$2; shift 2
 	# shellcheck disable=SC2086
-	env $_env "$pty" "$ref" "$@" >"$work/pty.t" 2>/dev/null
+	env $_env "$pty" "$ref" "$@" 2>/dev/null | norm >"$work/pty.t"
 	# shellcheck disable=SC2086
-	env $_env "$pty" "$ASP" "$@" >"$work/pty.a" 2>/dev/null
+	env $_env "$pty" "$ASP" "$@" 2>/dev/null | norm >"$work/pty.a"
 	if ! diff -q "$work/pty.t" "$work/pty.a" >/dev/null 2>&1; then
 		echo "PTY DIFF [$_d]"
 		diff "$work/pty.t" "$work/pty.a" | sed -n '1,8p' | cat -v

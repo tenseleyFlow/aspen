@@ -12,7 +12,12 @@ mkdir -p "$work"
 # Reuse configure's per-platform feature macros (e.g. -D_GNU_SOURCE on Linux, so
 # glibc exposes S_IFLNK/AT_FDCWD/syscall when the unit objects compile src/*.c).
 conf_cflags=$(sed -n 's/^CONF_CFLAGS = //p' config.mk)
-CFLAGS="-std=c11 -O1 -g $conf_cflags -Isrc -I. -Itests/unit -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all"
+# ASan/UBSan by default; ASP_TEST_SANITIZE=0 disables them for toolchains that
+# ship no sanitizer runtime (e.g. musl-gcc -> '__ubsan_handle_*: symbol not
+# found' at load time). The golden parity suite still runs there.
+san="-fsanitize=address,undefined -fno-sanitize-recover=all"
+[ "${ASP_TEST_SANITIZE:-1}" = 0 ] && san=""
+CFLAGS="-std=c11 -O1 -g $conf_cflags -Isrc -I. -Itests/unit -Wall -Wextra $san"
 libsrc=$(ls src/*.c src/sys/*.c src/render/*.c 2>/dev/null | grep -v '/main\.c$')
 # Optional link libs configure selected (e.g. -luring, -lpthread) — the unit
 # objects include iouring.o/pool.o, so they must link the same libs as the main

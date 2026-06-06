@@ -72,6 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CC: musl-gcc
+      ASP_TEST_SANITIZE: "0"   # musl-gcc ships no ASan/UBSan runtime
     steps:
       - uses: actions/checkout@v4
       - name: musl toolchain
