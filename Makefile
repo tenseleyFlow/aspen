@@ -13,7 +13,7 @@ VERSION  = 0.0.0-dev
 WARN     = -Wall -Wextra -Wpedantic -Wstrict-prototypes -Wshadow -Wconversion -Wwrite-strings
 STD      = -std=c11
 CFLAGS  ?= -O2
-ALL_CFLAGS = $(STD) $(WARN) $(CFLAGS) -Isrc
+ALL_CFLAGS = $(STD) $(WARN) $(CFLAGS) -Isrc -I.
 LDLIBS  += $(LDLIBS_OPT)
 
 SRC = $(wildcard src/*.c src/sys/*.c src/render/*.c)
