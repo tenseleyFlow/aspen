@@ -5,6 +5,7 @@
 #include "entry.h"
 #include "hashtab.h"
 #include "options.h"
+#include "sort.h"
 #include "util.h"
 #include "sys/dir.h"
 #include "sys/xstat.h"
@@ -30,13 +31,6 @@ struct evec {
 	struct entry **v;
 	size_t n, cap;
 };
-
-static int cmp_name(const void *a, const void *b)
-{
-	const struct entry *x = *(const struct entry *const *)a;
-	const struct entry *y = *(const struct entry *const *)b;
-	return strcoll(x->name, y->name);
-}
 
 static void evec_push(struct evec *ev, struct entry *e)
 {
@@ -72,6 +66,12 @@ static int meta_wanted(const struct options *o)
 	       o->dateflag || o->inodeflag || o->devflag || o->duflag;
 }
 
+/* Sorting by size/time needs the stat data too. */
+static int sort_needs_stat(const struct options *o)
+{
+	return o->sort == SORT_SIZE || o->sort == SORT_MTIME || o->sort == SORT_CTIME;
+}
+
 static void fill_link(struct wctx *c, int dirfd, struct entry *e)
 {
 	char buf[4096];
@@ -91,7 +91,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 	struct evec ev = { NULL, 0, 0 };
 	struct asp_dirent de;
 	const struct options *o = c->o;
-	int meta = meta_wanted(o);
+	int want_st = meta_wanted(o) || sort_needs_stat(o);
 	int r;
 	int dirfd = asp_dirfd(d);
 
@@ -103,9 +103,9 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		struct asp_statinfo si;
 		int have_si = 0;
 
-		/* lstat when: type unknown, metadata columns requested, or a
+		/* lstat when: type unknown, metadata/sort columns need it, or a
 		 * non-link flag needs it. Links are stat-followed separately below. */
-		if (t == ASP_UNKNOWN || meta || (t != ASP_LNK && nonlink_needs_stat(t, o))) {
+		if (t == ASP_UNKNOWN || want_st || (t != ASP_LNK && nonlink_needs_stat(t, o))) {
 			if (asp_stat_at(dirfd, de.name, 0, &si) == 0) {
 				have_si = 1;
 				if (t == ASP_UNKNOWN)
@@ -123,7 +123,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 			e->dev = si.dev;
 			if (t == ASP_REG && is_exec(si.mode))
 				e->flags |= ENT_EXEC;
-			if (meta) /* link columns show the link's own lstat (tree) */
+			if (want_st) /* link columns/sort use the link's own lstat (tree) */
 				e->st = arena_memdup(&c->arena, &si, sizeof si);
 		}
 
@@ -155,8 +155,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 	if (r < 0)
 		(*c->errors)++;
 
-	if (o->sort != SORT_NONE)
-		qsort(ev.v, ev.n, sizeof *ev.v, cmp_name);
+	asp_sort(ev.v, ev.n, o);
 
 	for (size_t i = 0; i < ev.n; i++) {
 		struct entry *e = ev.v[i];
