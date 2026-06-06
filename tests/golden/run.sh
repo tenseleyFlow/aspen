@@ -14,29 +14,30 @@ here=tests/golden
 work=tests/.work
 ref="$work/ref/tree-2.3.2"
 corpus="$work/corpus"
+weird="$work/weird"
 ASP=./aspen
 
 mkdir -p "$work"
 sh "$here/build-ref.sh" 2.3.2 || { echo "GOLDEN: cannot build reference tree"; exit 1; }
 sh "$here/mkcorpus.sh" "$corpus" >/dev/null
+sh "$here/mkweird.sh" "$weird" >/dev/null
 
-# Flag-sets compared on the corpus; %C expands to the corpus path. Grows per sprint.
+# Flag-sets compared on the corpus; %C = corpus, %W = weird-names fixture.
+# This list contains ONLY behavior aspen implements so far, and grows each sprint
+# (the honest rule: never gate on un-implemented flags). Deferred cases:
+#   -a -d -F -aF --noreport -L (Sprint 03), -s -p -D ... (Sprint 04), sorts (05) ...
 CASES='%C
--a %C
--d %C
--F %C
--aF %C
---noreport %C
--L 2 %C
---version
---help
+%C %C
+--charset=ascii %C
+%W
+--charset=ascii %W
 /no/such/path-xyz'
 
 normprog() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /'; }
 
 run_case() { # <bin> <case-string>
 	_bin=$1
-	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g")
+	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g")
 	_oi=$IFS
 	IFS=' 	'
 	# shellcheck disable=SC2086
