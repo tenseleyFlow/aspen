@@ -66,14 +66,16 @@ jobs:
             gmake CFLAGS="-O2 -Werror"
             gmake test
 
-  # musl libc (static-release target) in an Alpine container.
+  # musl libc (static-release target) via musl-gcc on the Linux runner. (An
+  # Alpine container can't host the node-based actions — checkout needs glibc.)
   musl:
     runs-on: ubuntu-latest
-    container: alpine:latest
+    env:
+      CC: musl-gcc
     steps:
-      - name: Alpine deps
-        run: apk add --no-cache build-base clang git bash grep sed coreutils diffutils
       - uses: actions/checkout@v4
+      - name: musl toolchain
+        run: sudo apt-get update -y && sudo apt-get install -y musl-tools
       - name: Configure + build (warnings = errors)
         run: |
           ./configure
