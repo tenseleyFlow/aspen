@@ -61,7 +61,7 @@ void name_print(struct dstr *out, const char *s, size_t len, int mb_cur_max, int
 			char mb[MB_LEN_MAX];
 			if (flags & NP_QUOTE)
 				dstr_appendc(out, '"');
-			wctomb(NULL, 0);
+			(void)wctomb(NULL, 0); /* reset shift state; result unused */
 			for (size_t i = 0; i < k; i++) {
 				if (iswprint((wint_t)ws[i])) {
 					int n = wctomb(mb, ws[i]);
