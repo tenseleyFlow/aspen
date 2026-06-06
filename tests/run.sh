@@ -1,0 +1,41 @@
+#!/bin/sh
+# aspen test driver. Runs unit tests now; the golden parity suite is appended
+# by a later Sprint-00 chunk (tests/golden/). Each unit test links against all
+# library sources (everything in src/ except main.c) so cross-module deps resolve.
+set -u
+
+CC=${CC:-cc}
+CFLAGS="-std=c11 -O1 -g -Isrc -Itests/unit -Wall -Wextra -fsanitize=address,undefined"
+work=tests/.work
+mkdir -p "$work"
+
+libsrc=$(ls src/*.c 2>/dev/null | grep -v '/main\.c$')
+
+fail=0
+for t in tests/unit/*_test.c; do
+	[ -e "$t" ] || continue
+	name=$(basename "$t" .c)
+	if ! $CC $CFLAGS -o "$work/$name" "$t" $libsrc 2>"$work/$name.log"; then
+		echo "BUILD FAIL: $name"
+		cat "$work/$name.log"
+		fail=1
+		continue
+	fi
+	if ! "$work/$name"; then
+		fail=1
+	fi
+done
+
+# Golden parity suite (present once tests/golden/run.sh lands).
+if [ -x tests/golden/run.sh ]; then
+	if ! sh tests/golden/run.sh; then
+		fail=1
+	fi
+fi
+
+if [ "$fail" -eq 0 ]; then
+	echo "TESTS: all passed"
+else
+	echo "TESTS: FAILURES"
+	exit 1
+fi
