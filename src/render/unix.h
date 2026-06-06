@@ -3,16 +3,11 @@
 
 /* The default (unix) output renderer. */
 
+#include "charset.h"
 #include "color.h"
 #include "dstr.h"
 #include "options.h"
 #include "render.h"
-
-struct linedraw {
-	const char *vert;      /* continuing-ancestor glyph */
-	const char *vert_left; /* branch (non-last entry) */
-	const char *corner;    /* last entry */
-};
 
 struct unix_ctx {
 	struct dstr out;

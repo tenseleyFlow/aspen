@@ -13,30 +13,6 @@
 #include <strings.h>
 #include <unistd.h>
 
-/* Sprint 02 ships UTF-8 + ASCII; the full charset table is Sprint 07.
- * UTF-8 vert is "│" + two U+00A0 NBSP (tree's exact bytes, .docs/audits/01 §3). */
-static const struct linedraw LD_UTF8 = {
-	"\342\224\202\302\240\302\240", /* │ + NBSP NBSP */
-	"\342\224\234\342\224\200\342\224\200", /* ├── */
-	"\342\224\224\342\224\200\342\224\200", /* └── */
-};
-static const struct linedraw LD_ASCII = { "|  ", "|--", "`--" };
-
-static int is_utf8(const char *cs)
-{
-	return cs && (!strcasecmp(cs, "UTF-8") || !strcasecmp(cs, "utf8"));
-}
-
-static const struct linedraw *pick_linedraw(const char *charset_name)
-{
-	const char *cs = charset_name;
-	if (!cs)
-		cs = getenv("TREE_CHARSET");
-	if (!cs)
-		cs = nl_langinfo(CODESET);
-	return is_utf8(cs) ? &LD_UTF8 : &LD_ASCII;
-}
-
 void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max,
 		   const struct options *o, struct colorizer *col)
 {
@@ -47,7 +23,7 @@ void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max,
 		      (o->qmark ? NP_QMARK : 0);
 	u->o = o;
 	u->col = col;
-	u->ld = pick_linedraw(o->charset);
+	u->ld = asp_linedraw(o);
 	u->last = NULL;
 	u->last_cap = 0;
 }
