@@ -1,7 +1,9 @@
 #include "sort.h"
+#include "util.h"
 #include "verscmp.h"
 #include "sys/xstat.h"
 
+#include <locale.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -61,10 +63,53 @@ static int cmp(const void *pa, const void *pb)
 	return basecmp(a, b);
 }
 
+/* True when collation is byte-order (C/POSIX): strcoll is already cheap there. */
+static int c_collate(void)
+{
+	const char *l = setlocale(LC_COLLATE, NULL);
+	return !l || !strcmp(l, "C") || !strcmp(l, "POSIX");
+}
+
+struct keyed {
+	struct entry *e;
+	char *key; /* strxfrm transform of e->name */
+};
+
+static int keycmp(const void *pa, const void *pb)
+{
+	const struct keyed *a = pa, *b = pb;
+	int v = strcmp(a->key, b->key);
+	return SO->reverse ? -v : v;
+}
+
 void asp_sort(struct entry **v, size_t n, const struct options *o)
 {
 	if (o->sort == SORT_NONE) /* -U: unsorted, and disables the meta-sort */
 		return;
 	SO = o;
+
+	/* Fast path for the common case (plain name sort in a collating locale):
+	 * transform each name once with strxfrm, then sort keys with memcmp —
+	 * O(n) strxfrm instead of O(n log n) strcoll. Same order by definition.
+	 * Skipped for C/POSIX (strcoll is already byte compare) and when a
+	 * meta-sort needs the dir/file split. */
+	if (o->sort == SORT_NAME && !o->dirsfirst && !o->filesfirst && n > 1 &&
+	    !c_collate()) {
+		struct keyed *k = asp_xmalloc(n * sizeof *k);
+		for (size_t i = 0; i < n; i++) {
+			size_t need = strxfrm(NULL, v[i]->name, 0);
+			k[i].e = v[i];
+			k[i].key = asp_xmalloc(need + 1);
+			strxfrm(k[i].key, v[i]->name, need + 1);
+		}
+		qsort(k, n, sizeof *k, keycmp);
+		for (size_t i = 0; i < n; i++) {
+			v[i] = k[i].e;
+			free(k[i].key);
+		}
+		free(k);
+		return;
+	}
+
 	qsort(v, n, sizeof *v, cmp);
 }
