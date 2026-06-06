@@ -1,2 +1,15 @@
+# planning + local guidance (kept local by request)
 .docs/
 CLAUDE.md
+
+# build artifacts
+/aspen
+/asp
+*.o
+*.d
+config.mk
+config.h
+
+# test/bench scratch
+/tests/.work/
+/bench/.work/
