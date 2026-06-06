@@ -62,8 +62,9 @@ struct options {
 	/* input (Sprint 10) */
 	int fromfile, fromtabfile, fflinks;
 
-	/* derived */
+	/* derived (set after parse / color_init) */
 	unsigned stat_mask;
+	int colorize; /* whether colorization is active (forces stat for mode) */
 };
 
 void options_init(struct options *o);

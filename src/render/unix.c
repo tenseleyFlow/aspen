@@ -37,7 +37,8 @@ static const struct linedraw *pick_linedraw(const char *charset_name)
 	return is_utf8(cs) ? &LD_UTF8 : &LD_ASCII;
 }
 
-void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max, const struct options *o)
+void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max,
+		   const struct options *o, struct colorizer *col)
 {
 	dstr_init(&u->out);
 	u->fd = fd;
@@ -45,6 +46,7 @@ void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max, const struct opti
 	u->np_flags = (o->quote ? NP_QUOTE : 0) | (o->noprint ? NP_NOPRINT : 0) |
 		      (o->qmark ? NP_QMARK : 0);
 	u->o = o;
+	u->col = col;
 	u->ld = pick_linedraw(o->charset);
 	u->last = NULL;
 	u->last_cap = 0;
@@ -133,11 +135,16 @@ static void ux_root(void *ctx, const char *path, int failed, const struct asp_st
 {
 	struct unix_ctx *u = ctx;
 	emit_info(u, st); /* root gets the bracket too (tree) */
+	int colored = 0;
+	if (!failed && u->col->enabled && st)
+		colored = color_apply(u->col, &u->out, st->mode, "", 0, 0);
 	name_print(&u->out, path, strlen(path), u->mb_cur_max, u->np_flags);
+	if (colored)
+		color_end(u->col, &u->out);
 	if (failed)
 		dstr_appendz(&u->out, "  [error opening dir]");
 	else if (u->o->classify && !u->o->dirsonly)
-		dstr_appendc(&u->out, '/'); /* root is a directory */
+		dstr_appendc(&u->out, '/'); /* root is a directory (after color reset) */
 	dstr_appendc(&u->out, '\n');
 	maybe_flush(u);
 }
@@ -158,22 +165,43 @@ static void ux_entry(void *ctx, const struct entry *e, const char *path,
 		emit_info(u, e->st);
 	}
 
+	/* name: colored by target mode if linktargetcolor, else the entry's own. */
+	int colored = 0;
+	if (u->col->enabled) {
+		mode_t m = (e->lnk && u->col->linktargetcolor)
+			? e->lmode
+			: (e->st ? e->st->mode : 0);
+		colored = color_apply(u->col, &u->out, m, e->name,
+				      e->flags & ENT_ORPHAN, 0);
+	}
 	if (o->fullpath)
 		name_print(&u->out, path, strlen(path), u->mb_cur_max, u->np_flags);
 	else
 		name_print(&u->out, e->name, e->namelen, u->mb_cur_max, u->np_flags);
+	if (colored)
+		color_end(u->col, &u->out);
+
+	/* -F suffix for non-links goes after the color reset. */
+	if (o->classify && !e->lnk) {
+		char s = ftype_char(o, (enum asp_type)e->type, e->flags & ENT_EXEC);
+		if (s)
+			dstr_appendc(&u->out, s);
+	}
 
 	if (e->lnk) {
 		dstr_appendz(&u->out, " -> ");
+		int lc = 0;
+		if (u->col->enabled)
+			lc = color_apply(u->col, &u->out, e->lmode, e->lnk,
+					 e->flags & ENT_ORPHAN, 1);
 		name_print(&u->out, e->lnk, strlen(e->lnk), u->mb_cur_max, u->np_flags);
-	}
-
-	if (o->classify) {
-		char s = e->lnk
-			? ftype_char(o, (enum asp_type)e->ltype, e->flags & ENT_LEXEC)
-			: ftype_char(o, (enum asp_type)e->type, e->flags & ENT_EXEC);
-		if (s)
-			dstr_appendc(&u->out, s);
+		if (lc)
+			color_end(u->col, &u->out);
+		if (o->classify) {
+			char s = ftype_char(o, (enum asp_type)e->ltype, e->flags & ENT_LEXEC);
+			if (s)
+				dstr_appendc(&u->out, s);
+		}
 	}
 	maybe_flush(u);
 }

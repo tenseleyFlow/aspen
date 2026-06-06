@@ -13,6 +13,7 @@ struct entry *entry_new(struct arena *a, const char *name, size_t namelen,
 	e->_pad = 0;
 	e->ino = 0;
 	e->dev = 0;
+	e->lmode = 0;
 	e->st = NULL;
 	e->lnk = NULL;
 	e->child = NULL;

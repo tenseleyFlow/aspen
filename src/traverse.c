@@ -103,7 +103,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 	struct evec ev = { NULL, 0, 0 };
 	struct asp_dirent de;
 	const struct options *o = c->o;
-	int want_st = meta_wanted(o) || sort_needs_stat(o);
+	int want_st = meta_wanted(o) || sort_needs_stat(o) || o->colorize;
 	int r;
 	int dirfd = asp_dirfd(d);
 
@@ -148,6 +148,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 			struct asp_statinfo ts;
 			if (asp_stat_at(dirfd, de.name, 1, &ts) == 0) {
 				e->ltype = (uint16_t)asp_type_from_mode(ts.mode);
+				e->lmode = ts.mode; /* for color / -F of the target */
 				if (e->ltype == ASP_REG && is_exec(ts.mode))
 					e->flags |= ENT_LEXEC;
 				e->ino = ts.ino; /* target identity for -l cycle */
@@ -270,16 +271,15 @@ void asp_walk(const char *root, const struct options *o,
 	c.root_dev = 0;
 	inoset_init(&c.seen);
 
-	/* Root stat: for -x device, -l cycle seed, and the metadata bracket. */
+	/* Root stat: for -x device, -l cycle seed, the metadata bracket, and color. */
 	struct asp_statinfo rs;
 	const struct asp_statinfo *root_st = NULL;
-	if (meta_wanted(o) || o->xdev || o->follow) {
+	if (meta_wanted(o) || o->xdev || o->follow || o->colorize) {
 		if (asp_stat_at(asp_dirfd(d), ".", 1, &rs) == 0) {
 			c.root_dev = rs.dev;
 			if (o->follow)
 				inoset_add(&c.seen, rs.ino, rs.dev);
-			if (meta_wanted(o))
-				root_st = &rs;
+			root_st = &rs;
 		}
 	}
 

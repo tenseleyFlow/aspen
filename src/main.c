@@ -10,6 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "color.h"
 #include "entry.h"
 #include "options.h"
 #include "render.h"
@@ -88,10 +89,14 @@ int main(int argc, char **argv)
 		rc = render_tree(roots, &o, &DEBUG_RENDERER, NULL, &t);
 		fprintf(stderr, "[debug] %lu directories, %lu files\n", t.dirs, t.files);
 	} else {
+		struct colorizer col;
+		color_init(&col, &o, STDOUT_FILENO);
+		o.colorize = col.enabled;
 		struct unix_ctx u;
-		unix_ctx_init(&u, STDOUT_FILENO, mb, &o);
+		unix_ctx_init(&u, STDOUT_FILENO, mb, &o, &col);
 		rc = render_tree(roots, &o, &asp_unix_renderer, &u, NULL);
 		unix_ctx_destroy(&u);
+		color_free(&col);
 	}
 
 	free(fav);

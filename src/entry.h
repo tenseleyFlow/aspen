@@ -29,6 +29,7 @@ struct entry {
 	uint16_t _pad;
 	ino_t ino;            /* cycle/xdev identity: target for links, own otherwise */
 	dev_t dev;
+	mode_t lmode;         /* symlink target mode (for color/-F), when followed */
 	const struct asp_statinfo *st; /* lstat info for -s/-p/-u/-g/-D columns; NULL otherwise */
 	char *lnk;            /* symlink target string, or NULL */
 	struct entry **child; /* full-tree mode only; NULL while streaming */
