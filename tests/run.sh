@@ -14,12 +14,16 @@ mkdir -p "$work"
 conf_cflags=$(sed -n 's/^CONF_CFLAGS = //p' config.mk)
 CFLAGS="-std=c11 -O1 -g $conf_cflags -Isrc -I. -Itests/unit -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all"
 libsrc=$(ls src/*.c src/sys/*.c src/render/*.c 2>/dev/null | grep -v '/main\.c$')
+# Optional link libs configure selected (e.g. -luring, -lpthread) — the unit
+# objects include iouring.o/pool.o, so they must link the same libs as the main
+# binary or resolution fails on real glibc.
+ldlibs=$(sed -n 's/^LDLIBS_OPT += //p' config.mk | tr '\n' ' ')
 
 fail=0
 for t in tests/unit/*_test.c; do
 	[ -e "$t" ] || continue
 	name=$(basename "$t" .c)
-	if ! $CC $CFLAGS -o "$work/$name" "$t" $libsrc 2>"$work/$name.log"; then
+	if ! $CC $CFLAGS -o "$work/$name" "$t" $libsrc $ldlibs 2>"$work/$name.log"; then
 		echo "BUILD FAIL: $name"
 		cat "$work/$name.log"
 		fail=1

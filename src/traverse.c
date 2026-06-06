@@ -8,6 +8,7 @@
 #include "glob.h"
 #include "hashtab.h"
 #include "info.h"
+#include "iouring.h"
 #include "options.h"
 #include "pool.h"
 #include "sort.h"
@@ -40,6 +41,7 @@ struct wctx {
 	int info_top;              /* current dir has its own .info */
 	dev_t root_dev;
 	struct asp_pool *pool;     /* metadata-stat workers (NULL = serial) */
+	struct asp_ring *ring;     /* io_uring statx backend (NULL = use pool) */
 };
 
 /* Threshold below which a level's deferred stats run inline — small levels
@@ -311,9 +313,22 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 	 * otherwise. Output order is fixed (by name) before this runs, so timing
 	 * is the only thing that changes. */
 	if (defer.n) {
-		struct stat_job j = { dirfd, want_st, defer.v };
-		struct asp_pool *p = (c->pool && defer.n >= ASP_STAT_PAR_MIN) ? c->pool : NULL;
-		asp_pool_for(p, defer.n, stat_one, &j);
+		int done = 0;
+		/* io_uring backend (opt-in) batches the statx; on any driver error
+		 * reset the per-entry failure marks and fall back to the pool. */
+		if (c->ring && defer.n >= ASP_STAT_PAR_MIN) {
+			if (asp_ring_stat_batch(c->ring, dirfd, defer.v, defer.n, want_st) == 0)
+				done = 1;
+			else
+				for (size_t k = 0; k < defer.n; k++)
+					defer.v[k]->flags &= (uint16_t)~ENT_STAT_FAILED;
+		}
+		if (!done) {
+			struct stat_job j = { dirfd, want_st, defer.v };
+			struct asp_pool *p =
+				(c->pool && defer.n >= ASP_STAT_PAR_MIN) ? c->pool : NULL;
+			asp_pool_for(p, defer.n, stat_one, &j);
+		}
 
 		/* Drop entries whose stat failed, preserving order (tree drops them). */
 		int dropped = 0;
@@ -692,6 +707,7 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	c.istack = NULL;
 	c.info_top = 0;
 	c.pool = NULL; /* synthetic entries carry their own stat; no real lstat */
+	c.ring = NULL;
 	inoset_init(&c.seen);
 
 	struct entry **top = synth_level(&c, ftop, 0);
@@ -754,15 +770,29 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	c.info_top = 0;
 	inoset_init(&c.seen);
 
-	/* Worker pool for the deferred metadata stat pass. Created only when some
-	 * flag actually stats every entry, so the default (d_type-only) fast path
-	 * pays nothing. --threads 1 forces serial; 0 = auto-size to cores. */
+	/* Backend for the deferred metadata stat pass. Created only when some flag
+	 * actually stats every entry, so the default (d_type-only) fast path pays
+	 * nothing. Selection (ASP_IO, for A/B benchmarking): default/"threads" use
+	 * the portable pool; "uring" uses io_uring when built+available (else pool);
+	 * "serial" or --threads 1 disables both. io_uring stays opt-in until it is
+	 * benchmarked to beat the pool. */
+	c.pool = NULL;
+	c.ring = NULL;
 	{
 		int stat_heavy = meta_wanted(o) || sort_needs_stat(o) || o->colorize ||
 				 o->classify || o->xdev || o->follow;
-		int workers = (o->threads == 1) ? 1
-			: (o->threads > 0 ? o->threads : asp_pool_default_workers());
-		c.pool = (stat_heavy && workers > 1) ? asp_pool_create(workers) : NULL;
+		const char *iomode = getenv("ASP_IO");
+		int serial = (o->threads == 1) || (iomode && !strcmp(iomode, "serial"));
+		if (stat_heavy && !serial) {
+			if (iomode && !strcmp(iomode, "uring"))
+				c.ring = asp_ring_create(256); /* NULL if unavailable */
+			if (!c.ring) {
+				int workers = (o->threads > 0) ? o->threads
+							       : asp_pool_default_workers();
+				if (workers > 1)
+					c.pool = asp_pool_create(workers);
+			}
+		}
 	}
 
 	/* Bottom of the filter stack: an explicit --gitfile and, with --gitignore,
@@ -836,6 +866,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 
 	asp_dirclose(d);
 	asp_pool_destroy(c.pool);
+	asp_ring_destroy(c.ring);
 	gitstack_flush(&c.fstack);
 	infostack_flush(&c.istack);
 	inoset_destroy(&c.seen);
