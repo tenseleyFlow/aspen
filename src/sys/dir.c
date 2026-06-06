@@ -46,7 +46,9 @@ static ssize_t sys_getdents(int fd, void *buf, size_t n)
 }
 #endif
 
-static enum asp_type type_from_dt(unsigned dt)
+/* Unused only on the readdir backend without d_type (rare); keep it warning-free
+ * there without a backend-specific guard. */
+__attribute__((unused)) static enum asp_type type_from_dt(unsigned dt)
 {
 	switch (dt) {
 	case DT_DIR:  return ASP_DIR;
@@ -140,7 +142,7 @@ int asp_dirread(struct asp_dir *d, struct asp_dirent *e)
 			return errno ? -1 : 0;
 		if (is_dotdir(de->d_name))
 			continue;
-#ifdef _DIRENT_HAVE_D_TYPE
+#if ASP_HAS_D_TYPE
 		e->type = type_from_dt(de->d_type);
 #else
 		e->type = ASP_UNKNOWN;

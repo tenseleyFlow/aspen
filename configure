@@ -42,6 +42,13 @@ HAS_GETDIRENTRIES=$(try_compile getdirentries '
 #include <dirent.h>
 int main(void){ char b[1]; long base; return (int)getdirentries(0,b,1,&base); }' '')
 
+# Does struct dirent carry d_type? (Linux/BSD/macOS yes; lets us skip the type
+# stat.) macOS has it but does not define _DIRENT_HAVE_D_TYPE, so probe directly.
+HAS_D_TYPE=$(try_compile d_type '
+#define _GNU_SOURCE
+#include <dirent.h>
+int main(void){ struct dirent d; return (int)d.d_type; }' '')
+
 HAS_STATX=$(try_compile statx '
 #define _GNU_SOURCE
 #include <fcntl.h>
@@ -68,6 +75,7 @@ cat > config.h <<EOF
 #define ASP_OS            "$uname_s"
 #define ASP_HAS_GETDENTS64    $HAS_GETDENTS64
 #define ASP_HAS_GETDIRENTRIES $HAS_GETDIRENTRIES
+#define ASP_HAS_D_TYPE        $HAS_D_TYPE
 #define ASP_HAS_STATX         $HAS_STATX
 #define ASP_HAS_LIBURING      $HAS_LIBURING
 #define ASP_HAS_PTHREAD       $HAS_PTHREAD

@@ -1,8 +1,11 @@
 #!/bin/sh
 # Sprint-01 discovery check: aspen's traversal must discover exactly the entries
 # tree does (set equality, order-independent), with directories typed correctly.
-# Oracle: `tree -fi --noreport -n` (full paths, no indent, no report); first line
-# is the root, dropped; symlink " -> target" suffixes stripped.
+# Oracle: `tree -fiN --noreport -n` (full paths, no indent, no report, names
+# as-is); first line is the root, dropped; symlink " -> target" suffixes
+# stripped. -N is essential: without it tree escapes spaces/UTF-8 bytes in a
+# locale-dependent way (octal in the C locale on macOS), which spuriously differs
+# from aspen's raw --asp-debug-walk output even when the path set matches.
 set -u
 
 work=tests/.work
@@ -26,17 +29,17 @@ check() { # <label> <aspen-cmd-output-file> <tree-output-file>
 
 # All discovered paths (default: no dotfiles)
 "$ASP" --asp-debug-walk "$corpus" | cut -f2- | sort >"$work/wk.asp"
-"$ref" -fi --noreport -n "$corpus" | sed '1d; s/ -> .*//' | sort >"$work/wk.ref"
+"$ref" -fiN --noreport -n "$corpus" | sed '1d; s/ -> .*//' | sort >"$work/wk.ref"
 check "path set (default)" "$work/wk.asp" "$work/wk.ref"
 
 # Directory paths only — validates DIR typing / descent
 "$ASP" --asp-debug-walk "$corpus" | awk -F'\t' '$1=="d"{print $2}' | sort >"$work/wk.dasp"
-"$ref" -dfi --noreport -n "$corpus" | sed '1d' | sort >"$work/wk.dref"
+"$ref" -dfiN --noreport -n "$corpus" | sed '1d' | sort >"$work/wk.dref"
 check "dir set (default)" "$work/wk.dasp" "$work/wk.dref"
 
 # With dotfiles (-a / --all)
 "$ASP" --asp-debug-walk -a "$corpus" | cut -f2- | sort >"$work/wk.aasp"
-"$ref" -afi --noreport -n "$corpus" | sed '1d; s/ -> .*//' | sort >"$work/wk.aref"
+"$ref" -afiN --noreport -n "$corpus" | sed '1d; s/ -> .*//' | sort >"$work/wk.aref"
 check "path set (-a)" "$work/wk.aasp" "$work/wk.aref"
 
 if [ "$fail" -eq 0 ]; then
