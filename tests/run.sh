@@ -34,6 +34,13 @@ if [ -x tests/golden/walk.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# Colorization parity (Sprint 07a).
+if [ -x tests/golden/color.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/color.sh; then
+		fail=1
+	fi
+fi
+
 # Golden parity suite (present once tests/golden/run.sh lands).
 if [ -x tests/golden/run.sh ]; then
 	if ! sh tests/golden/run.sh; then
