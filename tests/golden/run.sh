@@ -107,6 +107,13 @@ CASES='%C
 -A %C
 -S %C
 -A -F %M
+--hyperlink %C
+--hyperlink -f %C
+--hyperlink --scheme ssh:// %C
+--hyperlink --authority example.com %C
+--hyperlink --authority . %C
+--hyperlink -F %L
+--hyperlink %W
 -L 0 %C
 -L
 /no/such/path-xyz'
