@@ -144,6 +144,17 @@ CASES='%C
 --info -F %I
 --info --du %I
 --infofile %I/.info %I
+-J %C
+-J -i %C
+-J -pugsD %M
+-J --du %M
+-J -d %C
+-J %L
+-J --gitignore %G
+-J --info %I
+-J --prune %P
+-J %M %C
+-J /no/such/path-xyz
 -L 0 %C
 -L
 /no/such/path-xyz'
