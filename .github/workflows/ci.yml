@@ -5,7 +5,8 @@ on:
   pull_request:
 
 jobs:
-  build-test:
+  # Native runners: Linux (glibc, x86_64) and macOS (arm64).
+  native:
     strategy:
       fail-fast: false
       matrix:
@@ -19,6 +20,14 @@ jobs:
           cc --version
           make --version | head -1
 
+      - name: Linux deps (liburing for io_uring + hyperfine)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -y && sudo apt-get install -y liburing-dev hyperfine || true
+
+      - name: macOS deps (hyperfine)
+        if: runner.os == 'macOS'
+        run: brew install hyperfine || true
+
       - name: Configure + build (warnings = errors)
         run: |
           ./configure
@@ -27,16 +36,47 @@ jobs:
       - name: Unit + golden parity tests
         run: make test
 
+      - name: io_uring backend parity (Linux, when liburing detected)
+        if: runner.os == 'Linux'
+        run: |
+          if grep -q 'ASP_HAS_LIBURING = 1' config.mk; then
+            ASP_IO=uring make test
+          else
+            echo "liburing not detected — skipping io_uring gate"
+          fi
+
       - name: Sanitizer build (ASan/UBSan)
         run: make debug
 
-      - name: Install hyperfine (best-effort)
-        run: |
-          if [ "$RUNNER_OS" = Linux ]; then sudo apt-get update -y && sudo apt-get install -y hyperfine || true; fi
-          if [ "$RUNNER_OS" = macOS ]; then brew install hyperfine || true; fi
-
       - name: Benchmark + perf gate
-        # Gate enforces "faster than tree" once parity is active (Sprint 02);
-        # demo/measurement only before then. Our lead over tree is multi-x, so
-        # shared-runner noise will not flip the verdict.
         run: make bench
+
+  # FreeBSD (dev platform) in a VM on the Linux runner.
+  freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build + test in FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: pkg install -y git gmake
+          run: |
+            ./configure
+            gmake CFLAGS="-O2 -Werror"
+            gmake test
+
+  # musl libc (static-release target) in an Alpine container.
+  musl:
+    runs-on: ubuntu-latest
+    container: alpine:latest
+    steps:
+      - name: Alpine deps
+        run: apk add --no-cache build-base clang git bash grep sed coreutils diffutils
+      - uses: actions/checkout@v4
+      - name: Configure + build (warnings = errors)
+        run: |
+          ./configure
+          make CFLAGS="-O2 -Werror"
+      - name: Unit + golden parity tests
+        run: make test
