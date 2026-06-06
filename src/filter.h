@@ -26,6 +26,12 @@ struct ignorefile {
 	struct ignorefile *next;
 };
 
+/* Build a gpattern from a line (leading '/' stripped; relative vs absolute).
+ * Shared with the .info parser. Patterns are freed with free_patterns/gitstack_pop. */
+struct gpattern *asp_new_gpattern(const char *pattern);
+void asp_free_gpatterns(struct gpattern *p);
+void asp_gittrim(char *s); /* trim a .gitignore/.info line in place */
+
 /* Load <dirpath>/.gitignore, or NULL if none. */
 struct ignorefile *gitignore_load_dir(const char *dirpath);
 /* Load an explicit ignore file (basepath = dir its patterns are relative to). */

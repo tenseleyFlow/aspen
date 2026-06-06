@@ -14,6 +14,8 @@ struct linedraw {
 	const char *vert;      /* continuing-ancestor glyph (widest form) */
 	const char *vert_left; /* branch (non-last entry) */
 	const char *corner;    /* last entry */
+	/* .info comment decorators (tree's ctop/cbot/cmid/cext/csingle) */
+	const char *ctop, *cbot, *cmid, *cext, *csingle;
 };
 
 const struct linedraw *asp_linedraw(const struct options *o);

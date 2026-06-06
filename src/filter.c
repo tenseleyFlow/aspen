@@ -10,7 +10,7 @@
 
 /* Trim a .gitignore line: drop trailing \r\n, then trailing unescaped spaces,
  * then unescape '\'. In place. (tree's gittrim.) */
-static void gittrim(char *s)
+void asp_gittrim(char *s)
 {
 	ssize_t i, e = (ssize_t)strlen(s) - 1;
 	if (e < 0)
@@ -32,7 +32,7 @@ static void gittrim(char *s)
 	s[e] = '\0';
 }
 
-static struct gpattern *new_pattern(const char *pattern)
+struct gpattern *asp_new_gpattern(const char *pattern)
 {
 	struct gpattern *p = asp_xmalloc(sizeof *p);
 	const char *sl = strchr(pattern, '/');
@@ -60,10 +60,10 @@ static struct ignorefile *parse(const char *basepath, FILE *fp)
 		if (buf[0] == '#')
 			continue;
 		int rev = (buf[0] == '!');
-		gittrim(buf);
+		asp_gittrim(buf);
 		if (buf[0] == '\0')
 			continue;
-		struct gpattern *p = new_pattern(buf + (rev ? 1 : 0));
+		struct gpattern *p = asp_new_gpattern(buf + (rev ? 1 : 0));
 		if (rev) {
 			if (!reverse) reverse = revend = p;
 			else { revend->next = p; revend = p; }
@@ -115,7 +115,7 @@ void gitstack_push(struct ignorefile **stack, struct ignorefile *ig)
 	*stack = ig;
 }
 
-static void free_patterns(struct gpattern *p)
+void asp_free_gpatterns(struct gpattern *p)
 {
 	while (p) {
 		struct gpattern *n = p->next;
@@ -131,8 +131,8 @@ void gitstack_pop(struct ignorefile **stack)
 	if (!ig)
 		return;
 	*stack = ig->next;
-	free_patterns(ig->remove);
-	free_patterns(ig->reverse);
+	asp_free_gpatterns(ig->remove);
+	asp_free_gpatterns(ig->reverse);
 	free(ig->path);
 	free(ig);
 }
