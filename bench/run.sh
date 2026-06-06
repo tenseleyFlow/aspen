@@ -19,11 +19,26 @@ command -v hyperfine >/dev/null 2>&1 || {
 	exit 0
 }
 
+rc=0
 if [ -f tests/golden/PARITY_ACTIVE ] && [ -x "$ASP" ]; then
 	echo "== perf: aspen vs tree ($REF), warm cache, output -> discarded =="
 	hyperfine -N -w 3 -r 10 --export-csv "$work/results.csv" \
 		"$ASP $corpus" "$REF -n $corpus"
-	sh bench/gate.sh "$work/results.csv"
+	sh bench/gate.sh "$work/results.csv" || rc=1
+
+	# Per-shape gate: flat (sort+output), wide (common large tree), deep
+	# (syscall-bound chain). Each must still beat tree. Built on demand;
+	# ASP_BENCH_CLASSES=0 skips (e.g. constrained CI).
+	if [ "${ASP_BENCH_CLASSES:-1}" != 0 ]; then
+		sh bench/mkclasses.sh "$work" >/dev/null 2>&1 || true
+		for cls in flat wide deep; do
+			[ -d "$work/$cls" ] || continue
+			echo "== perf class: $cls =="
+			hyperfine -N -w 2 -r 8 --export-csv "$work/cls-$cls.csv" \
+				"$ASP $work/$cls" "$REF -n $work/$cls" >/dev/null
+			sh bench/gate.sh "$work/cls-$cls.csv" || rc=1
+		done
+	fi
 else
 	echo "== perf harness demo (aspen not producing real output yet) =="
 	echo "Proving the harness/gate work by comparing two reference builds:"
@@ -35,3 +50,4 @@ else
 	fi
 	echo "(perf gate inactive until Sprint 02 creates tests/golden/PARITY_ACTIVE)"
 fi
+exit $rc

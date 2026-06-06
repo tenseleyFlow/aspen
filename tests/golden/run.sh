@@ -35,6 +35,8 @@ sh "$here/mkgign.sh" "$gign" >/dev/null
 sh "$here/mkinfo.sh" "$inf" >/dev/null
 ff="$work/ff"
 sh "$here/mkff.sh" "$ff" >/dev/null
+dep="$work/deepchain"
+sh "$here/mkdeep.sh" "$dep" >/dev/null
 
 # Fixed empty intro/outtro: -H's default document embeds the program name and
 # version (legitimately "aspen", not "tree"), so golden-test the HTML *body* with
@@ -219,6 +221,14 @@ CASES='%C
 --fromtabfile %F/tab_orphan.txt
 -J --fromtabfile %F/tabs.txt
 -X --fromtabfile %F/tabs.txt
+%E
+-d %E
+-L 100 %E
+-f %E
+--du %E
+-J %E
+-X %E
+--noreport %E
 -L 0 %C
 -L
 /no/such/path-xyz'
@@ -227,7 +237,7 @@ normprog() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /'; }
 
 run_case() { # <bin> <case-string>
 	_bin=$1
-	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g; s#%G#$gign#g; s#%I#$inf#g; s#%h#$work/hintro#g; s#%o#$work/houtro#g; s#%F#$ff#g")
+	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g; s#%G#$gign#g; s#%I#$inf#g; s#%h#$work/hintro#g; s#%o#$work/houtro#g; s#%F#$ff#g; s#%E#$dep#g")
 	_oi=$IFS
 	IFS=' 	'
 	set -f # no globbing: pattern args like *.txt must reach the binary verbatim
