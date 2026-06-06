@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 #include "color.h"
@@ -65,6 +66,16 @@ int main(int argc, char **argv)
 	setlocale(LC_CTYPE, "");
 	setlocale(LC_COLLATE, "");
 	int mb = (int)MB_CUR_MAX;
+
+	/* The walk uses one open dir fd per active depth — fd-relative openat is
+	 * the #1 speed lever (no path re-resolution), but it bounds depth by the
+	 * open-file limit. Raise the soft limit to the hard limit so aspen descends
+	 * as deep as the system permits, far past tree's PATH_MAX cutoff (~500). */
+	struct rlimit rl;
+	if (getrlimit(RLIMIT_NOFILE, &rl) == 0 && rl.rlim_cur < rl.rlim_max) {
+		rl.rlim_cur = rl.rlim_max;
+		setrlimit(RLIMIT_NOFILE, &rl);
+	}
 
 	/* Pull out the test-only debug hook; parse everything else as tree flags. */
 	char **fav = asp_xmalloc((size_t)(argc + 1) * sizeof *fav);

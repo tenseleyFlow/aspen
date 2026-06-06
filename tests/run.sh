@@ -48,6 +48,13 @@ if [ -f tests/golden/pty.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# Deep-tree fd robustness (Sprint 11c): soft fd limit raised to hard.
+if [ -f tests/golden/fdlimit.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/fdlimit.sh; then
+		fail=1
+	fi
+fi
+
 # Parallel-stat determinism (Sprint 11b): --threads must not change output.
 if [ -f tests/golden/threads.sh ] && [ -x ./aspen ]; then
 	if ! sh tests/golden/threads.sh; then
