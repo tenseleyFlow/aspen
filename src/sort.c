@@ -80,13 +80,15 @@ static int c_collate(void)
 
 struct keyed {
 	struct entry *e;
-	char *key; /* strxfrm transform of e->name */
+	size_t koff; /* offset of this name's strxfrm key in the packed buffer */
 };
+
+static char *SO_keys; /* base of the packed key buffer, for keycmp */
 
 static int keycmp(const void *pa, const void *pb)
 {
 	const struct keyed *a = pa, *b = pb;
-	int v = strcmp(a->key, b->key);
+	int v = strcmp(SO_keys + a->koff, SO_keys + b->koff);
 	return SO->reverse ? -v : v;
 }
 
@@ -103,19 +105,38 @@ void asp_sort(struct entry **v, size_t n, const struct options *o)
 	 * Skipped for C/POSIX (strcoll is already byte compare) and when a
 	 * meta-sort needs the dir/file split. */
 	if (o->sort == SORT_NAME && !o->dirsfirst && !o->filesfirst && n > 1 &&
-	    !c_collate()) {
+	    !SO_cc) {
 		struct keyed *k = asp_xmalloc(n * sizeof *k);
+		char *buf = NULL;
+		size_t cap = 0, off = 0;
 		for (size_t i = 0; i < n; i++) {
-			size_t need = strxfrm(NULL, v[i]->name, 0);
+			const char *name = v[i]->name;
+			/* Generous guess keeps strxfrm to one call per name; the
+			 * retry below only fires on a rare underestimate. Packing all
+			 * keys in one buffer avoids 2n small malloc/free pairs. */
+			size_t guess = (size_t)v[i]->namelen * 4 + 32;
+			if (cap - off < guess) {
+				cap = cap ? cap * 2 : 8192;
+				while (cap - off < guess)
+					cap *= 2;
+				buf = asp_xrealloc(buf, cap);
+			}
+			size_t got = strxfrm(buf + off, name, cap - off);
+			if (got >= cap - off) { /* underestimate: grow to fit, redo once */
+				cap = off + got + 1;
+				buf = asp_xrealloc(buf, cap);
+				strxfrm(buf + off, name, cap - off);
+			}
 			k[i].e = v[i];
-			k[i].key = asp_xmalloc(need + 1);
-			strxfrm(k[i].key, v[i]->name, need + 1);
+			k[i].koff = off;
+			off += got + 1;
 		}
+		SO_keys = buf;
 		qsort(k, n, sizeof *k, keycmp);
-		for (size_t i = 0; i < n; i++) {
+		for (size_t i = 0; i < n; i++)
 			v[i] = k[i].e;
-			free(k[i].key);
-		}
+		SO_keys = NULL;
+		free(buf);
 		free(k);
 		return;
 	}
