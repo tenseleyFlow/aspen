@@ -8,7 +8,8 @@
  */
 
 #include "arena.h"
-#include "sys/dir.h" /* enum asp_type */
+#include "sys/dir.h"   /* enum asp_type */
+#include "sys/xstat.h" /* struct asp_statinfo */
 
 #include <stdint.h>
 #include <sys/types.h>
@@ -26,8 +27,9 @@ struct entry {
 	uint16_t ltype; /* symlink target type when stat-followed, else ASP_UNKNOWN */
 	uint16_t flags;
 	uint16_t _pad;
-	ino_t ino;            /* identity for cycle/xdev (filled when statted) */
+	ino_t ino;            /* cycle/xdev identity: target for links, own otherwise */
 	dev_t dev;
+	const struct asp_statinfo *st; /* lstat info for -s/-p/-u/-g/-D columns; NULL otherwise */
 	char *lnk;            /* symlink target string, or NULL */
 	struct entry **child; /* full-tree mode only; NULL while streaming */
 	char name[];          /* inline, NUL-terminated */

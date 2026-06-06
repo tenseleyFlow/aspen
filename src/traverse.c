@@ -65,6 +65,13 @@ static int nonlink_needs_stat(enum asp_type t, const struct options *o)
 	return 0;
 }
 
+/* Any flag that needs the bracketed metadata column -> stat every entry. */
+static int meta_wanted(const struct options *o)
+{
+	return o->sizeflag || o->permflag || o->userflag || o->groupflag ||
+	       o->dateflag || o->inodeflag || o->devflag || o->duflag;
+}
+
 static void fill_link(struct wctx *c, int dirfd, struct entry *e)
 {
 	char buf[4096];
@@ -84,6 +91,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 	struct evec ev = { NULL, 0, 0 };
 	struct asp_dirent de;
 	const struct options *o = c->o;
+	int meta = meta_wanted(o);
 	int r;
 	int dirfd = asp_dirfd(d);
 
@@ -95,11 +103,13 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		struct asp_statinfo si;
 		int have_si = 0;
 
-		/* Resolve an unknown d_type via lstat. */
-		if (t == ASP_UNKNOWN) {
+		/* lstat when: type unknown, metadata columns requested, or a
+		 * non-link flag needs it. Links are stat-followed separately below. */
+		if (t == ASP_UNKNOWN || meta || (t != ASP_LNK && nonlink_needs_stat(t, o))) {
 			if (asp_stat_at(dirfd, de.name, 0, &si) == 0) {
 				have_si = 1;
-				t = asp_type_from_mode(si.mode);
+				if (t == ASP_UNKNOWN)
+					t = asp_type_from_mode(si.mode);
 			} else {
 				(*c->errors)++;
 				continue; /* tree drops entries whose stat fails */
@@ -113,6 +123,8 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 			e->dev = si.dev;
 			if (t == ASP_REG && is_exec(si.mode))
 				e->flags |= ENT_EXEC;
+			if (meta) /* link columns show the link's own lstat (tree) */
+				e->st = arena_memdup(&c->arena, &si, sizeof si);
 		}
 
 		if (t == ASP_LNK) {
@@ -130,17 +142,6 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 				e->dev = ts.dev;
 			} else {
 				e->flags |= ENT_ORPHAN;
-			}
-		} else if (!have_si && nonlink_needs_stat(t, o)) {
-			if (asp_stat_at(dirfd, de.name, 0, &si) == 0) {
-				e->flags |= ENT_STATTED;
-				e->ino = si.ino;
-				e->dev = si.dev;
-				if (t == ASP_REG && is_exec(si.mode))
-					e->flags |= ENT_EXEC;
-			} else {
-				(*c->errors)++;
-				continue;
 			}
 		}
 
@@ -225,12 +226,10 @@ void asp_walk(const char *root, const struct options *o,
 {
 	struct asp_dir *d;
 	if (asp_diropen(root, &d) != 0) {
-		r->root(ctx, root, 1);
+		r->root(ctx, root, 1, NULL);
 		(*errors)++;
 		return;
 	}
-	r->root(ctx, root, 0);
-	tot->dirs++;
 
 	struct wctx c;
 	arena_init(&c.arena, 0);
@@ -248,13 +247,21 @@ void asp_walk(const char *root, const struct options *o,
 	c.root_dev = 0;
 	inoset_init(&c.seen);
 
-	if (o->xdev || o->follow) {
-		struct asp_statinfo rs;
+	/* Root stat: for -x device, -l cycle seed, and the metadata bracket. */
+	struct asp_statinfo rs;
+	const struct asp_statinfo *root_st = NULL;
+	if (meta_wanted(o) || o->xdev || o->follow) {
 		if (asp_stat_at(asp_dirfd(d), ".", 1, &rs) == 0) {
 			c.root_dev = rs.dev;
-			inoset_add(&c.seen, rs.ino, rs.dev);
+			if (o->follow)
+				inoset_add(&c.seen, rs.ino, rs.dev);
+			if (meta_wanted(o))
+				root_st = &rs;
 		}
 	}
+
+	r->root(ctx, root, 0, root_st);
+	tot->dirs++;
 
 	walk_dir(&c, d, 1);
 

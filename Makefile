@@ -13,7 +13,8 @@ VERSION  = 0.0.0-dev
 WARN     = -Wall -Wextra -Wpedantic -Wstrict-prototypes -Wshadow -Wconversion -Wwrite-strings
 STD      = -std=c11
 CFLAGS  ?= -O2
-ALL_CFLAGS = $(STD) $(WARN) $(CFLAGS) -Isrc -I.
+# _FILE_OFFSET_BITS=64 matches tree's ABI so off_t/ino_t column widths agree on 32-bit too.
+ALL_CFLAGS = $(STD) $(WARN) $(CFLAGS) -Isrc -I. -D_FILE_OFFSET_BITS=64
 LDLIBS  += $(LDLIBS_OPT)
 
 SRC = $(wildcard src/*.c src/sys/*.c src/render/*.c)

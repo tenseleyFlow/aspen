@@ -1,4 +1,5 @@
 #include "render/unix.h"
+#include "render/fileinfo.h"
 #include "render/name.h"
 #include "dstr.h"
 #include "entry.h"
@@ -116,9 +117,20 @@ static void ux_begin(void *ctx)
 	(void)ctx;
 }
 
-static void ux_root(void *ctx, const char *path, int failed)
+static void emit_info(struct unix_ctx *u, const struct asp_statinfo *st)
+{
+	char info[256];
+	size_t n = asp_fillinfo(info, sizeof info, u->o, st);
+	if (n) {
+		dstr_append(&u->out, info, n);
+		dstr_appendz(&u->out, "  ");
+	}
+}
+
+static void ux_root(void *ctx, const char *path, int failed, const struct asp_statinfo *st)
 {
 	struct unix_ctx *u = ctx;
+	emit_info(u, st); /* root gets the bracket too (tree) */
 	name_print(&u->out, path, strlen(path), u->mb_cur_max);
 	if (failed)
 		dstr_appendz(&u->out, "  [error opening dir]");
@@ -134,8 +146,15 @@ static void ux_entry(void *ctx, const struct entry *e, const char *path,
 	struct unix_ctx *u = ctx;
 	const struct options *o = u->o;
 
-	if (!o->noindent)
-		draw_indent(u, depth, is_last);
+	if (o->metafirst) {
+		emit_info(u, e->st);
+		if (!o->noindent)
+			draw_indent(u, depth, is_last);
+	} else {
+		if (!o->noindent)
+			draw_indent(u, depth, is_last);
+		emit_info(u, e->st);
+	}
 
 	if (o->fullpath)
 		name_print(&u->out, path, strlen(path), u->mb_cur_max);

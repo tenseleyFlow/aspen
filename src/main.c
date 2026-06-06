@@ -36,7 +36,10 @@ static char type_char(enum asp_type t)
 }
 
 static void dbg_noop(void *c) { (void)c; }
-static void dbg_root(void *c, const char *p, int f) { (void)c; (void)p; (void)f; }
+static void dbg_root(void *c, const char *p, int f, const struct asp_statinfo *st)
+{
+	(void)c; (void)p; (void)f; (void)st;
+}
 static void dbg_error(void *c, const char *m) { (void)c; (void)m; }
 static void dbg_newline(void *c) { (void)c; }
 static void dbg_report(void *c, const struct totals *t) { (void)c; (void)t; }
