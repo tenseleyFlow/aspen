@@ -155,6 +155,18 @@ CASES='%C
 -J --prune %P
 -J %M %C
 -J /no/such/path-xyz
+-X %C
+-X -i %C
+-X -pugsD %M
+-X --du %M
+-X -d %C
+-X %L
+-X --info %I
+-X --gitignore %G
+-X --prune %P
+-X --charset=IBM437 %C
+-X %M %C
+-X /no/such/path-xyz
 -L 0 %C
 -L
 /no/such/path-xyz'
