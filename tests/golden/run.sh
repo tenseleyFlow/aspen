@@ -17,6 +17,7 @@ corpus="$work/corpus"
 weird="$work/weird"
 lnk="$work/lnk"
 meta="$work/meta"
+vert="$work/vert"
 ASP=./aspen
 
 mkdir -p "$work"
@@ -25,6 +26,7 @@ sh "$here/mkcorpus.sh" "$corpus" >/dev/null
 sh "$here/mkweird.sh" "$weird" >/dev/null
 sh "$here/mklnk.sh" "$lnk" >/dev/null
 sh "$here/mkmeta.sh" "$meta" >/dev/null
+sh "$here/mkvert.sh" "$vert" >/dev/null
 
 # Flag-sets compared; %C = corpus, %W = weird names, %L = symlink/cycle fixture.
 # Contains ONLY behavior aspen implements so far; grows each sprint (never gate on
@@ -67,6 +69,19 @@ CASES='%C
 --metafirst -ps %M
 -F %M
 -ps %W
+-v %V
+--sort=version %V
+-rv %V
+-U %C
+-r %C
+--dirsfirst %C
+--filesfirst %C
+--dirsfirst -r %C
+--sort=none %C
+--sort=size %M
+-t %M
+-c %M
+-t -r %M
 -L 0 %C
 -L
 /no/such/path-xyz'
@@ -75,7 +90,7 @@ normprog() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /'; }
 
 run_case() { # <bin> <case-string>
 	_bin=$1
-	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g")
+	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g")
 	_oi=$IFS
 	IFS=' 	'
 	# shellcheck disable=SC2086
