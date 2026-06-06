@@ -5,11 +5,12 @@
 set -u
 
 CC=${CC:-cc}
-CFLAGS="-std=c11 -O1 -g -Isrc -Itests/unit -Wall -Wextra -fsanitize=address,undefined"
+CFLAGS="-std=c11 -O1 -g -Isrc -I. -Itests/unit -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all"
 work=tests/.work
 mkdir -p "$work"
 
-libsrc=$(ls src/*.c 2>/dev/null | grep -v '/main\.c$')
+[ -f config.h ] || ./configure >/dev/null
+libsrc=$(ls src/*.c src/sys/*.c src/render/*.c 2>/dev/null | grep -v '/main\.c$')
 
 fail=0
 for t in tests/unit/*_test.c; do
@@ -25,6 +26,13 @@ for t in tests/unit/*_test.c; do
 		fail=1
 	fi
 done
+
+# Discovery check (Sprint 01): traversal must find exactly what tree finds.
+if [ -x tests/golden/walk.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/walk.sh; then
+		fail=1
+	fi
+fi
 
 # Golden parity suite (present once tests/golden/run.sh lands).
 if [ -x tests/golden/run.sh ]; then
