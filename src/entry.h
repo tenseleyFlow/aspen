@@ -35,6 +35,7 @@ struct entry {
 	char *lnk;            /* symlink target string, or NULL */
 	struct entry **child; /* full-tree mode: NULL-terminated child array, or NULL */
 	const char *err;      /* full-tree mode: per-entry error to render, or NULL */
+	char **info;          /* --info: NULL-terminated annotation lines, or NULL */
 	char name[];          /* inline, NUL-terminated */
 };
 

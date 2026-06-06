@@ -6,6 +6,7 @@
 #include "filter.h"
 #include "glob.h"
 #include "hashtab.h"
+#include "info.h"
 #include "options.h"
 #include "sort.h"
 #include "util.h"
@@ -18,6 +19,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#ifndef ASP_INFO_PATH
+#define ASP_INFO_PATH "/usr/share/finfo/global_info" /* tree's default --info file */
+#endif
+
 struct wctx {
 	struct arena arena;
 	struct dstr path;
@@ -28,6 +33,8 @@ struct wctx {
 	int *errors;
 	struct inoset seen; /* -l cycle detection */
 	struct ignorefile *fstack; /* --gitignore filter stack */
+	struct infofile *istack;   /* --info annotation stack */
+	int info_top;              /* current dir has its own .info */
 	dev_t root_dev;
 };
 
@@ -39,6 +46,19 @@ static struct ignorefile *push_dir_gitignore(struct wctx *c)
 	struct ignorefile *ig = gitignore_load_dir(c->path.data);
 	gitstack_push(&c->fstack, ig);
 	return ig;
+}
+
+/* Push the current directory's .info; record whether this dir has one. */
+static struct infofile *push_dir_info(struct wctx *c)
+{
+	if (!c->o->showinfo) {
+		c->info_top = 0;
+		return NULL;
+	}
+	struct infofile *inf = info_load_dir(c->path.data);
+	infostack_push(&c->istack, inf);
+	c->info_top = (inf != NULL);
+	return inf;
 }
 
 struct evec {
@@ -201,6 +221,28 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 		if (o->dirsonly && !isdir)
 			continue;
 
+		/* --info: attach matching annotation lines (copied into the arena so
+		 * they survive into full-tree emit). */
+		if (o->showinfo && c->istack) {
+			size_t save = c->path.len;
+			dstr_appendc(&c->path, '/');
+			dstr_append(&c->path, de.name, strlen(de.name));
+			char **desc = info_check(c->istack, c->path.data, de.name,
+						 c->info_top, isdir, o->ignorecase);
+			c->path.len = save;
+			c->path.data[save] = '\0';
+			if (desc) {
+				size_t n = 0;
+				while (desc[n])
+					n++;
+				char **cp = arena_alloc(&c->arena, (n + 1) * sizeof *cp);
+				for (size_t k = 0; k < n; k++)
+					cp[k] = arena_strdup(&c->arena, desc[k]);
+				cp[n] = NULL;
+				e->info = cp;
+			}
+		}
+
 		evec_push(ev, e);
 	}
 	if (r < 0)
@@ -215,6 +257,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 	const struct options *o = c->o;
 	int dirfd = asp_dirfd(d);
 	struct ignorefile *ig = push_dir_gitignore(c);
+	struct infofile *inf = push_dir_info(c);
 
 	read_level(c, d, &ev, 0);
 
@@ -262,23 +305,31 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 			struct asp_dir *cd;
 			if (asp_diropen_at(dirfd, e->name, &cd) == 0) {
 				c->r->newline(c->rctx);
+				if (e->info)
+					c->r->comment(c->rctx, e, depth);
 				walk_dir(c, cd, depth + 1);
 				asp_dirclose(cd);
 			} else {
 				c->r->error(c->rctx, "error opening dir");
 				c->r->newline(c->rctx);
+				if (e->info)
+					c->r->comment(c->rctx, e, depth);
 				(*c->errors)++;
 			}
 		} else {
 			if (post_err)
 				c->r->error(c->rctx, post_err);
 			c->r->newline(c->rctx);
+			if (e->info)
+				c->r->comment(c->rctx, e, depth);
 		}
 
 		c->path.len = pathlen;
 		c->path.data[pathlen] = '\0';
 	}
 
+	if (inf)
+		infostack_pop(&c->istack);
 	if (ig)
 		gitstack_pop(&c->fstack);
 	free(ev.v);
@@ -295,6 +346,7 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 	int dirfd = asp_dirfd(d);
 	size_t pathlen = c->path.len;
 	struct ignorefile *ig = push_dir_gitignore(c);
+	struct infofile *inf = push_dir_info(c);
 
 	read_level(c, d, &ev, suppress_pat);
 
@@ -346,6 +398,8 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 		}
 	}
 
+	if (inf)
+		infostack_pop(&c->istack);
 	if (ig)
 		gitstack_pop(&c->fstack);
 
@@ -420,11 +474,15 @@ static void emit_level(struct wctx *c, struct entry **arr, int depth)
 
 		if (e->child) {
 			c->r->newline(c->rctx);
+			if (e->info)
+				c->r->comment(c->rctx, e, depth);
 			emit_level(c, e->child, depth + 1);
 		} else {
 			if (e->err)
 				c->r->error(c->rctx, e->err);
 			c->r->newline(c->rctx);
+			if (e->info)
+				c->r->comment(c->rctx, e, depth);
 		}
 
 		c->path.len = pathlen;
@@ -457,6 +515,8 @@ void asp_walk(const char *root, const struct options *o,
 	c.errors = errors;
 	c.root_dev = 0;
 	c.fstack = NULL;
+	c.istack = NULL;
+	c.info_top = 0;
 	inoset_init(&c.seen);
 
 	/* Bottom of the filter stack: an explicit --gitfile and, with --gitignore,
@@ -471,6 +531,12 @@ void asp_walk(const char *root, const struct options *o,
 			gitstack_push(&c.fstack, gitignore_load_file(gd, ex));
 		}
 	}
+
+	/* --infofile (explicit) and, with --info, the global info file. */
+	if (o->infofile)
+		infostack_push(&c.istack, info_load_file(o->infofile));
+	if (o->showinfo)
+		infostack_push(&c.istack, info_load_file(ASP_INFO_PATH));
 
 	/* Root stat: for -x device, -l cycle seed, the metadata bracket, and color. */
 	struct asp_statinfo rs;
@@ -508,6 +574,7 @@ void asp_walk(const char *root, const struct options *o,
 
 	asp_dirclose(d);
 	gitstack_flush(&c.fstack);
+	infostack_flush(&c.istack);
 	inoset_destroy(&c.seen);
 	dstr_free(&c.path);
 	arena_destroy(&c.arena);

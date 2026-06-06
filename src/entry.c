@@ -18,6 +18,7 @@ struct entry *entry_new(struct arena *a, const char *name, size_t namelen,
 	e->lnk = NULL;
 	e->child = NULL;
 	e->err = NULL;
+	e->info = NULL;
 	memcpy(e->name, name, namelen);
 	e->name[namelen] = '\0';
 	return e;

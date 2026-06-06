@@ -163,11 +163,48 @@ static void draw_indent(struct unix_ctx *u, int depth, int is_last)
 	u->last[depth] = (unsigned char)(is_last ? 1 : 0);
 }
 
+/* Indent for .info comment lines: every level uses the continuation form (the
+ * comment hangs under the entry), matching tree's indent() with dirs[d+1]=1. */
+static void draw_comment_indent(struct unix_ctx *u, int depth)
+{
+	for (int i = 1; i <= depth; i++) {
+		dstr_appendz(&u->out, u->last[i] ? "   " : u->ld->vert);
+		dstr_appendc(&u->out, ' ');
+	}
+}
+
 /* --- renderer callbacks --- */
 
 static void ux_begin(void *ctx)
 {
 	(void)ctx;
+}
+
+static void ux_comment(void *ctx, const struct entry *e, int depth)
+{
+	struct unix_ctx *u = ctx;
+	if (!e->info)
+		return;
+	size_t lines = 0;
+	while (e->info[lines])
+		lines++;
+	for (size_t ln = 0; ln < lines; ln++) {
+		draw_comment_indent(u, depth);
+		const char *dec;
+		if (lines == 1)
+			dec = u->ld->csingle;
+		else if (ln == 0)
+			dec = u->ld->ctop;
+		else if (ln < 2)
+			dec = (lines == 2) ? u->ld->cbot : u->ld->cmid;
+		else
+			dec = (ln == lines - 1) ? u->ld->cbot : u->ld->cext;
+		dstr_appendz(&u->out, dec);
+		dstr_appendc(&u->out, ' ');
+		dstr_appendz(&u->out, e->info[ln]);
+		dstr_appendc(&u->out, '\n');
+	}
+	maybe_flush(u);
 }
 
 static void emit_info(struct unix_ctx *u, const struct asp_statinfo *st)
@@ -325,5 +362,5 @@ static void ux_end(void *ctx)
 }
 
 const struct renderer asp_unix_renderer = {
-	ux_begin, ux_root, ux_entry, ux_error, ux_newline, ux_report, ux_end,
+	ux_begin, ux_root, ux_entry, ux_error, ux_newline, ux_comment, ux_report, ux_end,
 };

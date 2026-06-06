@@ -18,6 +18,7 @@ struct renderer {
 		      int depth, int is_last);          /* indent + name + link, NO newline */
 	void (*error)(void *ctx, const char *msg);      /* "  [<msg>]" */
 	void (*newline)(void *ctx);
+	void (*comment)(void *ctx, const struct entry *e, int depth); /* --info lines after the entry */
 	void (*report)(void *ctx, const struct totals *t);
 	void (*end)(void *ctx);                         /* document outtro */
 };
