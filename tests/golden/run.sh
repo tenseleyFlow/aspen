@@ -82,6 +82,20 @@ CASES='%C
 -t %M
 -c %M
 -t -r %M
+-P *.txt %C
+-I *.log %C
+-P *.txt -I a* %C
+--ignore-case -P *.TXT %C
+-aP .h* %C
+-P a1*|b1* %C
+-P abc| %C
+-P zzz* %C
+-q %W
+-N %W
+-Q %W
+-qF %W
+-NF %W
+-Qp %W
 -L 0 %C
 -L
 /no/such/path-xyz'
@@ -93,8 +107,10 @@ run_case() { # <bin> <case-string>
 	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g")
 	_oi=$IFS
 	IFS=' 	'
+	set -f # no globbing: pattern args like *.txt must reach the binary verbatim
 	# shellcheck disable=SC2086
 	set -- $_expanded
+	set +f
 	IFS=$_oi
 	"$_bin" "$@" >"$work/o.out" 2>"$work/o.err"
 	echo $? >"$work/o.rc"
