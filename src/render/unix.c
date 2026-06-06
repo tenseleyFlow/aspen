@@ -1,4 +1,5 @@
 #include "render/unix.h"
+#include "render/escape.h"
 #include "render/fileinfo.h"
 #include "render/name.h"
 #include "dstr.h"
@@ -46,29 +47,6 @@ void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max,
 	}
 }
 
-/* url_encode: whitelist alnum + "/-._~", else %XX (uppercase); returns whether
- * the last byte was '/'. Ported from tree's html.c url_encode (2.3.2). */
-static int url_encode_n(struct dstr *out, const char *s, size_t n)
-{
-	static const char unreserved[] = "/-._~";
-	int slash = 0;
-	for (size_t i = 0; i < n; i++) {
-		char c = s[i]; /* signed, like tree */
-		if (isalnum((unsigned char)c) || strchr(unreserved, c)) {
-			dstr_appendc(out, c);
-		} else {
-			/* tree passes the signed char to %02X, so high bytes
-			 * sign-extend to %FFFFFFXX — reproduce that exactly. */
-			char b[16];
-			int m = snprintf(b, sizeof b, "%%%02X", c);
-			if (m > 0)
-				dstr_append(out, b, (size_t)m);
-		}
-		slash = (c == '/');
-	}
-	return slash;
-}
-
 /* OSC-8 open, mirroring tree's open_hyperlink(dirname, filename). Builds
  * scheme://authority:<realbase>/<dirname+offset>/<filename>. */
 static void open_hyperlink(struct unix_ctx *u, const char *dirname, size_t dirnamelen,
@@ -80,19 +58,19 @@ static void open_hyperlink(struct unix_ctx *u, const char *dirname, size_t dirna
 
 	dstr_appendz(&u->out, "\033]8;;");
 	dstr_appendz(&u->out, u->scheme);
-	url_encode_n(&u->out, u->authority, strlen(u->authority));
+	asp_url_encode_n(&u->out, u->authority, strlen(u->authority));
 	dstr_appendc(&u->out, ':');
-	int slash = url_encode_n(&u->out, u->realbase, strlen(u->realbase));
+	int slash = asp_url_encode_n(&u->out, u->realbase, strlen(u->realbase));
 	if (subdirlen) {
 		slash = slash || (subdir[0] == '/');
 		if (!slash)
 			dstr_appendc(&u->out, '/');
-		if (!url_encode_n(&u->out, subdir, subdirlen))
+		if (!asp_url_encode_n(&u->out, subdir, subdirlen))
 			dstr_appendc(&u->out, '/');
 	} else if (!slash) {
 		dstr_appendc(&u->out, '/');
 	}
-	url_encode_n(&u->out, filename, filenamelen);
+	asp_url_encode_n(&u->out, filename, filenamelen);
 	dstr_appendz(&u->out, "\033\\");
 }
 
