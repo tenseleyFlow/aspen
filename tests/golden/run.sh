@@ -96,6 +96,17 @@ CASES='%C
 -qF %W
 -NF %W
 -Qp %W
+--charset=IBM437 %C
+--charset=Shift_JIS %C
+--charset=EUC-JP %C
+--charset=ISO-8859-1 %C
+--charset=GB2312 %C
+--charset=Big5 %C
+--charset=KOI8-R %C
+--charset=ISO-2022-JP %C
+-A %C
+-S %C
+-A -F %M
 -L 0 %C
 -L
 /no/such/path-xyz'

@@ -42,6 +42,8 @@ chk "NO_COLOR > CF"   "TERM=xterm CLICOLOR_FORCE=1 NO_COLOR=1" "$C"
 chk "-n off"          "$DEF" -n "$C"
 chk "CLICOLOR no-tty" "TERM=xterm CLICOLOR=1" "$C"
 chk "TERM unset"      "CLICOLOR_FORCE=1" -C "$C"
+chk "TREE_CHARSET"    "TREE_CHARSET=IBM437" "$C"
+chk "TREE_CHARSET+C"  "TERM=xterm TREE_CHARSET=Shift_JIS CLICOLOR_FORCE=1" -C "$L"
 
 if [ "$fail" -eq 0 ]; then
 	echo "COLOR: matches tree (-C / env cases)"
