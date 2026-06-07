@@ -116,6 +116,13 @@ if [ -f tests/golden/deviations.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# JSON/XML structural invariants (SR-1.10): aspen's -J/-X well-formed on its own.
+if [ -f tests/golden/structural.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/structural.sh; then
+		fail=1
+	fi
+fi
+
 # Differential fuzzer (SR-1.3): seeded random trees vs tree 2.3.2. Small N here
 # (CI gate); a nightly job runs FUZZ_N in the thousands.
 if [ -f tests/golden/fuzz.sh ] && [ -x ./aspen ]; then
