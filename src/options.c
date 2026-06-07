@@ -22,18 +22,133 @@ static void die_msg(const char *msg)
 	exit(1);
 }
 
+/* Usage/help text — byte-for-byte tree 2.3.2's, with the program name our own.
+ * tree builds this with fancy() markup (\b bold, \f italic, \r reset) that is
+ * elided whenever colorization is off, i.e. on any pipe — which is exactly what
+ * the golden differ sees, so we emit the plain text directly. The synopsis goes
+ * to `out` (stderr for a bad flag, stdout for --help); the body always to
+ * stdout. `full` distinguishes --help (1) from a usage-on-error blurb (0). The
+ * --acl/--selinux lines are Linux-only in tree; mirror that with __linux__. */
+static void asp_usage(FILE *out, int full)
+{
+	fprintf(out,
+		"usage: %s [-acdfghilnpqrstuvxACDFJQNSUX] [-L level [-R]] [-H [-]baseHREF]\n"
+		"\t[-T title] [-o filename] [-P pattern] [-I pattern] [--gitignore]\n"
+		"\t[--gitfile[=]file] [--matchdirs] [--metafirst] [--ignore-case]\n"
+		"\t[--nolinks] [--hintro[=]file] [--houtro[=]file] [--inodes] [--device]\n"
+		"\t[--sort[=]name] [--dirsfirst] [--filesfirst] [--filelimit[=]#] [--si]\n"
+		"\t[--du] [--prune] [--charset[=]X] [--timefmt[=]format] [--fromfile]\n"
+		"\t[--fromtabfile] [--fflinks] [--info] [--infofile[=]file] [--noreport]\n"
+		"\t[--hyperlink] [--scheme[=]schema] [--authority[=]host] [--opt-toggle]\n"
+		"\t[--compress[=]#] [--condense] [--version] [--help]"
+#ifdef __linux__
+		" [--acl] [--selinux]\n"
+#else
+		"\n"
+#endif
+		"\t[--] [directory ...]\n",
+		ASP_PROGNAME);
+
+	if (!full)
+		return;
+
+	fputs(
+		"  ------- Listing options -------\n"
+		"  -a            All files are listed.\n"
+		"  -d            List directories only.\n"
+		"  -l            Follow symbolic links like directories.\n"
+		"  -f            Print the full path prefix for each file.\n"
+		"  -x            Stay on current filesystem only.\n"
+		"  -L level      Descend only level directories deep.\n"
+		"  -R            Rerun tree when max dir level reached.\n"
+		"  -P pattern    List only those files that match the pattern given.\n"
+		"  -I pattern    Do not list files that match the given pattern.\n"
+		"  --gitignore   Filter by using .gitignore files.\n"
+		"  --gitfile X   Explicitly read a gitignore file.\n"
+		"  --ignore-case Ignore case when pattern matching.\n"
+		"  --matchdirs   Include directory names in -P pattern matching.\n"
+		"  --metafirst   Print meta-data at the beginning of each line.\n"
+		"  --prune       Prune empty directories from the output.\n"
+		"  --info        Print information about files found in .info files.\n"
+		"  --infofile X  Explicitly read info file.\n"
+		"  --noreport    Turn off file/directory count at end of tree listing.\n"
+		"  --charset X   Use charset X for terminal/HTML and indentation line output.\n"
+		"  --filelimit # Do not descend dirs with more than # files in them.\n"
+		"  --condense    Condense directory singletons to a single line of output.\n"
+		"  -o filename   Output to file instead of stdout.\n"
+		"  ------- File options -------\n"
+		"  -q            Print non-printable characters as '?'.\n"
+		"  -N            Print non-printable characters as is.\n"
+		"  -Q            Quote filenames with double quotes.\n"
+		"  -p            Print the protections for each file.\n"
+		"  -u            Displays file owner or UID number.\n"
+		"  -g            Displays file group owner or GID number.\n"
+		"  -s            Print the size in bytes of each file.\n"
+		"  -h            Print the size in a more human readable way.\n"
+		"  --si          Like -h, but use in SI units (powers of 1000).\n"
+		"  --du          Compute size of directories by their contents.\n"
+		"  -D            Print the date of last modification or (-c) status change.\n"
+		"  --timefmt fmt Print and format time according to the format fmt.\n"
+		"  -F            Appends '/', '=', '*', '@', '|' or '>' as per ls -F.\n"
+		"  --inodes      Print inode number of each file.\n"
+		"  --device      Print device ID number to which each file belongs.\n"
+#ifdef __linux__
+		"  --acl         Print permissions with a + if an ACL is present.\n"
+		"  --selinux     Print the selinux security label if present.\n"
+#endif
+		, stdout);
+
+	fputs(
+		"  ------- Sorting options -------\n"
+		"  -v            Sort files alphanumerically by version.\n"
+		"  -t            Sort files by last modification time.\n"
+		"  -c            Sort files by last status change time.\n"
+		"  -U            Leave files unsorted.\n"
+		"  -r            Reverse the order of the sort.\n"
+		"  --dirsfirst   List directories before files (-U disables).\n"
+		"  --filesfirst  List files before directories (-U disables).\n"
+		"  --sort X      Select sort: name,version,size,mtime,ctime,none.\n"
+		"  ------- Graphics options -------\n"
+		"  -i            Don't print indentation lines.\n"
+		"  -A            Print ANSI lines graphic indentation lines.\n"
+		"  -S            Print with CP437 (console) graphics indentation lines.\n"
+		"  -n            Turn colorization off always (-C overrides).\n"
+		"  -C            Turn colorization on always.\n"
+		"  --compress #  Compress indentation lines.\n"
+		"  ------- XML/HTML/JSON/HYPERLINK options -------\n"
+		"  -X            Prints out an XML representation of the tree.\n"
+		"  -J            Prints out an JSON representation of the tree.\n"
+		"  -H baseHREF   Prints out HTML format with baseHREF as top directory.\n"
+		"  -T string     Replace the default HTML title and H1 header with string.\n"
+		"  --nolinks     Turn off hyperlinks in HTML output.\n"
+		"  --hintro X    Use file X as the HTML intro.\n"
+		"  --houtro X    Use file X as the HTML outro.\n"
+		"  --hyperlink   Turn on OSC 8 terminal hyperlinks.\n"
+		"  --scheme X    Set OSC 8 hyperlink scheme, default file://\n"
+		"  --authority X Set OSC 8 hyperlink authority/hostname.\n"
+		"  ------- Input options -------\n"
+		"  --fromfile    Reads paths from files (.=stdin)\n"
+		"  --fromtabfile Reads trees from tab indented files (.=stdin)\n"
+		"  --fflinks     Process link information when using --fromfile.\n"
+		"  ------- Miscellaneous options -------\n"
+		"  --opt-toggle  Enable option toggling.\n"
+		"  --version     Print version and exit.\n"
+		"  --help        Print usage and this help message and exit.\n"
+		"  --            Options processing terminator.\n"
+		, stdout);
+}
+
 static void die_invalid_long(const char *a)
 {
-	/* tree dumps full usage here; that text is deferred (see plan.md ledger). */
 	fprintf(stderr, "%s: Invalid argument `%s'.\n", ASP_PROGNAME, a);
-	fprintf(stderr, "usage: %s [options] [directory ...]\n", ASP_PROGNAME);
+	asp_usage(stderr, 0);
 	exit(1);
 }
 
 static void die_invalid_short(char c)
 {
 	fprintf(stderr, "%s: Invalid argument -`%c'.\n", ASP_PROGNAME, c);
-	fprintf(stderr, "usage: %s [options] [directory ...]\n", ASP_PROGNAME);
+	asp_usage(stderr, 0);
 	exit(1);
 }
 
@@ -100,7 +215,7 @@ static int parse_long(char *a, int *i, int argc, char **argv,
 		return 0;
 	}
 	if (!strcmp(a, "--help")) {
-		printf("usage: %s [options] [directory ...]\n", ASP_PROGNAME);
+		asp_usage(stdout, 1);
 		exit(0);
 	}
 	if (!strcmp(a, "--version")) {

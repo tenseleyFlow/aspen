@@ -67,6 +67,13 @@ if [ -f tests/golden/outfile.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# Usage/help/version/bad-flag parity (SR-1.6): name-only divergence from tree.
+if [ -f tests/golden/usage.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/usage.sh; then
+		fail=1
+	fi
+fi
+
 # Deep-tree fd robustness (Sprint 11c): soft fd limit raised to hard.
 if [ -f tests/golden/fdlimit.sh ] && [ -x ./aspen ]; then
 	if ! sh tests/golden/fdlimit.sh; then
