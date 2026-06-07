@@ -31,5 +31,20 @@ int main(void)
 	CHECK("dironly vs file", m("d", "d/", 0, 0) == 0);
 	CHECK("dironly vs dir", m("d", "d/", 1, 0) == 1);
 	CHECK("syntax error -> -1", m("x", "abc|", 0, 0) == -1);
+
+	/* Alternation / class edges (tree patmatch quirks; the filter treats a
+	 * non-zero result, incl. the -1 "error", as a match — see pat_match_any).
+	 *   - an empty alternative (||, leading/trailing |) is a syntax error -> -1,
+	 *     so a malformed pattern effectively matches everything;
+	 *   - a real alternative beside an empty one still matches its literal;
+	 *   - "[]a]" is an empty/unterminated class in tree's globber -> matches
+	 *     nothing (the ']' right after '[' is NOT taken as a literal member). */
+	CHECK("empty alt mid -> err", m("xyz", "a||b", 0, 0) == -1);
+	CHECK("real alt beside empty", m("a", "a||b", 0, 0) == 1);
+	CHECK("leading | -> err", m("xyz", "|abc", 0, 0) == -1);
+	CHECK("trailing | -> err", m("xyz", "foo|", 0, 0) == -1);
+	CHECK("[]a] matches nothing", m("a", "[]a]", 0, 0) == 0);
+	CHECK("[]a] vs ] nothing", m("]", "[]a]", 0, 0) == 0);
+	CHECK("dangling [a- -> err", m("a", "[a-]", 0, 0) == -1);
 	return test_summary("glob");
 }
