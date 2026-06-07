@@ -20,6 +20,14 @@ mkdir -p "$d/pd/trueempty"
 
 mkdir -p "$d/noread"; chmod 000 "$d/noread"      # unreadable directory as root (rc 0, 1 file)
 
+# Non-directory / special roots — each makes opendir fail, exercising the root
+# -F suffix (fifo '|', exec '*', symlink '@') and the HTML root href, both of
+# which aspen emitted only on the success path before SR-1.1.
+mkfifo "$d/afifo" 2>/dev/null || :               # fifo root           -> '|'
+: > "$d/anexec"; chmod +x "$d/anexec"            # executable root     -> '*'
+ln -s nonexistent-target "$d/abroken"            # broken symlink root -> '@'
+ln -s onlyfiles "$d/asymdir"                     # symlink-to-dir root -> '@'
+
 # --filelimit: big exceeds, small does not; a file after big exercises tree's
 # JSON "flag.J && errors" quirk (later entries get a spurious empty contents).
 mkdir -p "$d/fl/big" "$d/fl/small"

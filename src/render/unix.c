@@ -91,6 +91,24 @@ static char ftype_char(const struct options *o, enum asp_type t, int exe)
 	}
 }
 
+/* Root -F suffix: a byte-for-byte port of tree's Ftype(mode) applied straight
+ * to the root's mode. Unlike a child entry, the root is never expanded as a
+ * symlink (no " -> target"), so a symlink root yields '@' here. '-d' suppresses
+ * only the directory '/', never the fifo/sock/link/exec suffixes. */
+static char root_ftype(const struct options *o, mode_t mode)
+{
+	mode_t m = mode & S_IFMT;
+	if (m == S_IFDIR)  return o->dirsonly ? 0 : '/';
+	if (m == S_IFSOCK) return '=';
+	if (m == S_IFIFO)  return '|';
+	if (m == S_IFLNK)  return '@';
+#ifdef S_IFDOOR
+	if (m == S_IFDOOR) return '>';
+#endif
+	if (m == S_IFREG && (mode & (S_IXUSR | S_IXGRP | S_IXOTH))) return '*';
+	return 0;
+}
+
 void unix_ctx_destroy(struct unix_ctx *u)
 {
 	dstr_free(&u->out);
@@ -218,20 +236,18 @@ static void ux_root(void *ctx, const char *path, int failed, const struct asp_st
 		color_end(u->col, &u->out);
 	if (u->hyper && !failed)
 		close_hyperlink(u);
-	if (failed) {
-		dstr_appendz(&u->out, "  [error opening dir]");
-	} else if (u->o->classify && !u->o->dirsonly) {
-		/* root is normally a directory ('/'); a --fromfile root takes the
-		 * path-list file's real type, so a file root gets its own suffix. */
-		if (st && !S_ISDIR(st->mode)) {
-			int ex = (st->mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0;
-			char fc = ftype_char(u->o, asp_type_from_mode(st->mode), ex);
-			if (fc)
-				dstr_appendc(&u->out, fc);
-		} else {
-			dstr_appendc(&u->out, '/'); /* root is a directory */
-		}
+	/* tree appends the -F suffix to the root BEFORE any "[error opening dir]"
+	 * blurb, and does so for every root type — including the fifo/socket/exec/
+	 * symlink roots whose opendir necessarily fails. With a stat we know the
+	 * exact type; if the root opened fine without one it can only be a dir. */
+	if (u->o->classify) {
+		char fc = st ? root_ftype(u->o, st->mode)
+			     : (failed ? 0 : (u->o->dirsonly ? 0 : '/'));
+		if (fc)
+			dstr_appendc(&u->out, fc);
 	}
+	if (failed)
+		dstr_appendz(&u->out, "  [error opening dir]");
 	dstr_appendc(&u->out, '\n');
 	maybe_flush(u);
 }

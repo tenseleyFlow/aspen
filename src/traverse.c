@@ -843,16 +843,27 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	if (o->showinfo)
 		infostack_push(&c.istack, info_load_file(ASP_INFO_PATH));
 
-	/* Root stat: for -x device, -l cycle seed, the metadata bracket, and color. */
+	/* The root needs up to two stats, divergent only when it is a symlink:
+	 *   walk stat — the OPENED directory ('.' via the dir fd, symlinks followed):
+	 *               supplies the device for -x and the ino/dev cycle seed for -l,
+	 *               i.e. the directory actually being traversed.
+	 *   display stat (rs) — lstat(root): what the renderer SHOWS (metadata
+	 *               bracket, color, -F suffix). tree displays the link's own
+	 *               metadata ('@', link size/perms) even though it walks the
+	 *               target; for a real-dir root the two stats are identical. */
+	if (o->xdev || o->follow) {
+		struct asp_statinfo ws;
+		if (asp_stat_at(asp_dirfd(d), ".", 1, &ws) == 0) {
+			c.root_dev = ws.dev;
+			if (o->follow)
+				inoset_add(&c.seen, ws.ino, ws.dev);
+		}
+	}
 	struct asp_statinfo rs;
 	const struct asp_statinfo *root_st = NULL;
-	if (meta_wanted(o) || o->xdev || o->follow || o->colorize) {
-		if (asp_stat_at(asp_dirfd(d), ".", 1, &rs) == 0) {
-			c.root_dev = rs.dev;
-			if (o->follow)
-				inoset_add(&c.seen, rs.ino, rs.dev);
+	if (meta_wanted(o) || o->colorize || o->classify) {
+		if (asp_stat_at(AT_FDCWD, root, 0, &rs) == 0)
 			root_st = &rs;
-		}
 	}
 
 	if (r->tree) {

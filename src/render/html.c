@@ -237,17 +237,22 @@ static void html_root(void *ctx, const char *path, int failed, const struct asp_
 	h->htmldirlen = strlen(path);
 	dstr_appendc(&h->out, '\t'); /* root line is indented like tree's html */
 	emit_info(h, st);
-	if (failed) {
-		/* a tag with no href, then the error */
+	/* tree emits the anchor's href for any root that EXISTS — including the
+	 * fifo/exec/symlink/unreadable roots whose opendir fails — and a bare <a>
+	 * only for a root that doesn't stat at all (nonexistent). aspen knows the
+	 * root exists when opendir succeeded (!failed) or its lstat did (st); a stat
+	 * is computed lazily, so st==NULL with !failed is an opened-fine directory.
+	 * The href's trailing '/' tracks isdir (a non-dir/file root gets none). */
+	if (!failed || st) {
+		int isdir = st ? S_ISDIR(st->mode) : 1;
+		anchor(h, NULL, path, strlen(path), path, isdir, 1);
+	} else {
 		dstr_appendz(&h->out, "<a>");
 		asp_html_encode(&h->out, path);
 		dstr_appendz(&h->out, "</a>");
-		dstr_appendz(&h->out, "  [error opening dir]");
-	} else {
-		/* --fromfile root takes the path-list file's type (no '/' if a file). */
-		int isdir = !st || S_ISDIR(st->mode);
-		anchor(h, NULL, path, strlen(path), path, isdir, 1);
 	}
+	if (failed)
+		dstr_appendz(&h->out, "  [error opening dir]");
 	dstr_appendz(&h->out, "<br>\n"); /* root self-terminates, like ux_root's '\n' */
 	hmaybe(h);
 }
