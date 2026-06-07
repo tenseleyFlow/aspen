@@ -283,7 +283,10 @@ run_case() { # <bin> <case-string>
 	echo $? >"$work/o.rc"
 }
 
-phase() { # <bin_a> <bin_b> <label>  -> echoes diff count, returns it (capped 125)
+# phase: compare $1 vs $2 over all CASES in the current locale. Writes the diff
+# count to $work/phase.fails (a file, not the exit status, which caps at 256 and
+# can't accumulate). DIFF lines go to stdout (visible — no longer /dev/null'd).
+phase() { # <bin_a> <bin_b> <label>
 	_a=$1; _b=$2; _label=$3; _fails=0; _n=0
 	_oifs=$IFS
 	IFS='
@@ -299,28 +302,39 @@ phase() { # <bin_a> <bin_b> <label>  -> echoes diff count, returns it (capped 12
 		   ! diff -q "$work/a.err" "$work/b.err" >/dev/null 2>&1 ||
 		   [ "$(cat "$work/a.rc")" != "$(cat "$work/b.rc")" ]; then
 			_fails=$((_fails + 1))
-			echo "  DIFF [$_label]: $_c"
+			echo "  DIFF [$_label/${LC_ALL:-C}]: $_c"
 		fi
 	done
 	IFS=$_oifs
-	echo "$_label: $_n cases, $_fails diffs" >&2
-	return $_fails
+	echo "$_label [${LC_ALL:-C}]: $_n cases, $_fails diffs" >&2
+	echo "$_fails" > "$work/phase.fails"
 }
 
-# Phase 1 — harness self-test
-phase "$ref" "$ref" "self-test(ref-vs-ref)" >/dev/null
-selffail=$?
+# Run the whole suite under C (byte-order collation) and, when available, a
+# dictionary UTF-8 locale (exercises strxfrm sort + multibyte name printing).
+# Skip a UTF-8 locale gracefully where none is installed (e.g. musl/Alpine).
+utf8=""
+for _L in en_US.UTF-8 en_US.utf8 C.UTF-8 C.utf8; do
+	[ "$(LC_ALL=$_L locale charmap 2>/dev/null)" = "UTF-8" ] && { utf8=$_L; break; }
+done
+locales="C"; [ -n "$utf8" ] && locales="C $utf8"
+echo "GOLDEN: locales = $locales"
 
-# Phase 2 — parity (gated)
-parityfail=0
-if [ -f "$here/PARITY_ACTIVE" ] && [ -x "$ASP" ]; then
-	phase "$ASP" "$ref" "parity(aspen-vs-ref)" >/dev/null
-	parityfail=$?
-fi
+selffail=0; parityfail=0
+for _lc in $locales; do
+	export LC_ALL="$_lc"
+	phase "$ref" "$ref" "self-test(ref-vs-ref)"
+	selffail=$((selffail + $(cat "$work/phase.fails")))
+	if [ -f "$here/PARITY_ACTIVE" ] && [ -x "$ASP" ]; then
+		phase "$ASP" "$ref" "parity(aspen-vs-ref)"
+		parityfail=$((parityfail + $(cat "$work/phase.fails")))
+	fi
+	unset LC_ALL
+done
 
 rc=0
 if [ "$selffail" -ne 0 ]; then
-	echo "GOLDEN: self-test FAILED — harness or corpus is non-deterministic"
+	echo "GOLDEN: self-test FAILED ($selffail) — harness or corpus is non-deterministic"
 	rc=1
 fi
 if [ -f "$here/PARITY_ACTIVE" ] && [ "$parityfail" -ne 0 ]; then
