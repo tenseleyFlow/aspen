@@ -82,6 +82,18 @@ case "$_brk" in
 	*) echo "DEVIATIONS D4: could not find brk link inode in -J output"; fail=1 ;;
 esac
 
+# D5: cleaner malformed-CLI parsing. Glued short-flag arg (-Pafoo) parses like
+# -P afoo (getopt-style, no silent drop); exact long flags (--filelimit2 rejected).
+mkdir -p "$dv/pq/sub"; : > "$dv/pq/afoo"; : > "$dv/pq/sub/b"
+set -f
+"$ASP" -Pafoo  "$dv/pq" >"$dv/d5g" 2>/dev/null
+"$ASP" -P afoo "$dv/pq" >"$dv/d5s" 2>/dev/null
+set +f
+if ! diff -q "$dv/d5g" "$dv/d5s" >/dev/null 2>&1; then
+	echo "DEVIATIONS D5: glued -Pafoo differs from -P afoo (silent-misparse regressed)"; fail=1
+fi
+"$ASP" --filelimit2 "$dv/pq" >/dev/null 2>&1 && { echo "DEVIATIONS D5: --filelimit2 accepted (should reject exact-match)"; fail=1; }
+
 chmod -R u+rwx "$dv" 2>/dev/null || :
 rm -rf "$dv"
 

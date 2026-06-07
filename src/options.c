@@ -162,6 +162,20 @@ static const char *need_arg(int *i, int argc, char **argv, const char *what)
 	return argv[++(*i)];
 }
 
+/* Argument for an arg-taking short flag, getopt-style: the glued remainder of
+ * the token (-Pfoo -> "foo") if present, else the next argv (-P foo). Mirrors
+ * -L's glued-digit handling and ends the cluster either way. (DEVIATION D5: tree
+ * has no glued-arg form — it takes the next argv and then parses the remainder
+ * as MORE short flags, so -Pfoo misparses; aspen never silently drops it.) */
+static const char *short_arg(char *a, size_t *j, int *i, int argc, char **argv,
+			     const char *what)
+{
+	const char *v = (a[*j + 1] != '\0') ? a + *j + 1
+					    : need_arg(i, argc, argv, what);
+	*j = strlen(a) - 1; /* consume the rest of this token */
+	return v;
+}
+
 static void add_pat(const char ***arr, size_t *n, size_t *cap, const char *p)
 {
 	if (*n == *cap) {
@@ -305,16 +319,15 @@ void options_parse(int argc, char **argv, struct options *o,
 				case 'J': o->format = OUT_JSON; break;
 				case 'H':
 					o->format = OUT_HTML;
-					o->host = need_arg(&i, argc, argv, "-H");
+					o->host = short_arg(a, &j, &i, argc, argv, "-H");
 					if (o->host[0] == '-') { o->htmloffset = 1; o->host++; }
-					j = strlen(a) - 1;
 					break;
-				case 'T': o->title = need_arg(&i, argc, argv, "-T"); j = strlen(a) - 1; break;
-				case 'o': o->outfilename = need_arg(&i, argc, argv, "-o"); j = strlen(a) - 1; break;
+				case 'T': o->title = short_arg(a, &j, &i, argc, argv, "-T"); break;
+				case 'o': o->outfilename = short_arg(a, &j, &i, argc, argv, "-o"); break;
 				case 'P': add_pat(&o->patterns, &o->npat, &o->patcap,
-						  need_arg(&i, argc, argv, "-P")); j = strlen(a) - 1; break;
+						  short_arg(a, &j, &i, argc, argv, "-P")); break;
 				case 'I': add_pat(&o->ipatterns, &o->nipat, &o->ipatcap,
-						  need_arg(&i, argc, argv, "-I")); j = strlen(a) - 1; break;
+						  short_arg(a, &j, &i, argc, argv, "-I")); break;
 				case 'L': {
 					long lv;
 					if (isdigit((unsigned char)a[j + 1])) {
