@@ -47,6 +47,17 @@ fi
 d1 "--filelimit+du"    "$dv/fl"   --filelimit 3 --du
 d1 "--filelimit+prune" "$dv/fl"   --filelimit 3 --prune
 
+# SR-2.12: the ROOT itself over --filelimit. Plain/-J/-X output is byte-identical
+# to tree (d1 checks stdout==tree + rc 2). fl/big has 5 entries > limit 3.
+d1 "root-overlimit"    "$dv/fl/big" --filelimit 3
+d1 "root-overlimit -J" "$dv/fl/big" --filelimit 3 -J
+d1 "root-overlimit -X" "$dv/fl/big" --filelimit 3 -X
+# --du root variant: aspen stays consistent ("exceeds filelimit" + 1 dir);
+# tree relabels it "error opening dir" + 1 file. Assert aspen's consistent form.
+"$ASP" --du --filelimit 3 "$dv/fl/big" >"$dv/du.o" 2>/dev/null
+grep -q 'exceeds filelimit' "$dv/du.o" || { echo "DEVIATIONS SR-2.12: --du root over-limit lost the consistent marker"; cat "$dv/du.o"; fail=1; }
+grep -q '1 director' "$dv/du.o" || { echo "DEVIATIONS SR-2.12: --du root over-limit not counted as 1 directory"; cat "$dv/du.o"; fail=1; }
+
 # D2: -J stays valid JSON after an error — a later plain file must NOT get a
 # spurious "contents" key (tree's flag.J && errors quirk). fl/big trips the
 # filelimit (an error); fl/small/a is a later plain file.

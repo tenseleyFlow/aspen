@@ -242,7 +242,8 @@ static void json_report(void *ctx, const struct totals *t)
 }
 
 static void json_tree(void *ctx, const char *rootpath, const struct asp_statinfo *st,
-		      int opened, struct entry **top, struct totals *tot, int last_root)
+		      int opened, const char *limit_err, struct entry **top,
+		      struct totals *tot, int last_root)
 {
 	struct json_ctx *j = ctx;
 
@@ -287,6 +288,21 @@ static void json_tree(void *ctx, const char *rootpath, const struct asp_statinfo
 	jenc(&j->out, rootpath);
 	dstr_appendc(&j->out, '"');
 	jfillinfo(j, st ? &rstz : NULL);
+
+	/* Root tripped --filelimit: a directory whose only content is the error,
+	 * counted as one directory (SR-2.12), mirroring a child over-limit dir. */
+	if (limit_err) {
+		tot->dirs++;
+		dstr_appendz(&j->out, ",\"contents\":[{\"error\": \"");
+		jenc(&j->out, limit_err);
+		dstr_appendz(&j->out, "\"}");
+		dstr_appendz(&j->out, jnl(j)); /* root: error node then newline + indent + ] */
+		jindent(j, 0);
+		dstr_appendz(&j->out, "]}");
+		dstr_appendz(&j->out, last_root ? "" : ",");
+		dstr_appendz(&j->out, jnl(j));
+		return;
+	}
 
 	/* tree counts the root as a directory and emits "contents" only when it has
 	 * at least one child; an empty root is just {type,name} and counts 0. */

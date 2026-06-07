@@ -22,11 +22,15 @@ struct renderer {
 	void (*report)(void *ctx, const struct totals *t);
 	void (*end)(void *ctx);                         /* document outtro */
 
-	/* Nested formats (JSON/XML/HTML) set this instead of root/entry/.../comment:
-	 * the engine builds the whole tree and hands each root's subtree here. NULL
-	 * for the line-oriented unix renderer. tot is accumulated across roots. */
+	/* Nested formats (JSON/XML) set this instead of root/entry/.../comment: the
+	 * engine builds the whole tree and hands each root's subtree here. NULL for
+	 * the line-oriented unix/html renderers. tot is accumulated across roots.
+	 * opened=0 -> failed-open root (lstat-typed, "error opening dir"). limit_err
+	 * != NULL -> a directory root that tripped --filelimit (render it as a dir
+	 * whose only content is that error, counted as one directory). */
 	void (*tree)(void *ctx, const char *rootpath, const struct asp_statinfo *st,
-		     int opened, struct entry **top, struct totals *tot, int last_root);
+		     int opened, const char *limit_err, struct entry **top,
+		     struct totals *tot, int last_root);
 };
 
 /* Orchestrate over the root list: begin, per-root walk, report, end.

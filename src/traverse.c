@@ -45,6 +45,7 @@ struct wctx {
 	struct infofile *istack;   /* --info annotation stack */
 	int info_top;              /* current dir has its own .info */
 	dev_t root_dev;
+	const char *root_err;      /* SR-2.12: set if the root itself tripped --filelimit */
 	struct statprov *sp;       /* metadata-stat backend seam (serial/pool/uring) */
 
 	/* Reusable scratch — kept across the whole walk so a level pays no per-dir
@@ -116,6 +117,7 @@ static void wctx_scratch_init(struct wctx *c)
 	c->epool = NULL;
 	c->epoolcap = 0;
 	c->defer = (struct evec){ NULL, 0, 0 };
+	c->root_err = NULL;
 }
 
 static void wctx_scratch_free(struct wctx *c)
@@ -543,15 +545,22 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 	read_level(c, d, ev, suppress_pat);
 
 	/* --filelimit: a directory with more than N listable entries is not opened;
-	 * it shows the marker (via owner->err, rendered like an error node) and its
-	 * contents are skipped. The ROOT as the over-limit arg (owner==NULL) is a
-	 * separate, mode-dependent quirk (plain: "N entries…"+1 dir; --du: renders
-	 * like a failed open, "error opening dir"+1 file) tracked in SR-2.10, where
-	 * the root/child unification belongs — not handled here yet. */
-	if (o->filelimit > 0 && owner && ev->n > (size_t)o->filelimit) {
+	 * it shows the marker and its contents are skipped. Handled uniformly for a
+	 * child (owner->err, rendered as an error node) and the ROOT itself (SR-2.12:
+	 * owner==NULL -> c->root_err, which asp_walk renders as a directory + that
+	 * error, counted as one directory). aspen is consistent across modes;
+	 * tree's --du/-d root variants diverge (deviation, see .docs/deviations.md). */
+	if (o->filelimit > 0 && ev->n > (size_t)o->filelimit) {
 		char m[80];
 		snprintf(m, sizeof m, "%zu entries exceeds filelimit, not opening dir", ev->n);
-		owner->err = arena_strdup(&c->arena, m);
+		const char *msg = arena_strdup(&c->arena, m);
+		/* A child over-limit dir shows the marker via owner->err; the ROOT itself
+		 * (owner==NULL, SR-2.12) signals via wctx so asp_walk renders it as a
+		 * directory + this error, counted as one directory. */
+		if (owner)
+			owner->err = msg;
+		else
+			c->root_err = msg;
 		/* DEVIATION D1: a tripped filelimit is an error -> exit 2, in EVERY mode.
 		 * tree exits 2 only on its streaming path and wrongly reports 0 under
 		 * --du/--prune/--matchdirs; aspen is consistent. See .docs/deviations.md. */
@@ -560,7 +569,7 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 			infostack_pop(&c->istack);
 		if (ig)
 			gitstack_pop(&c->fstack);
-		return NULL; /* no children: emit_level shows owner->err (pool keeps ev) */
+		return NULL; /* no children: emit_level/asp_walk shows the marker (pool keeps ev) */
 	}
 
 	/* Cache buffer + count: the per-child build_level recursion below can
@@ -795,7 +804,7 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	/* lstat failure (e.g. a nonexistent path-list) is a hard error, like tree. */
 	if (root_st == NULL) {
 		if (r->tree)
-			r->tree(ctx, arg, NULL, 0, NULL, tot, last_root);
+			r->tree(ctx, arg, NULL, 0, NULL, NULL, tot, last_root);
 		else
 			r->root(ctx, arg, "error opening dir", NULL);
 		(*errors)++;
@@ -835,7 +844,7 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	}
 
 	if (r->tree) {
-		r->tree(ctx, arg, root_st, 1, top, tot, last_root);
+		r->tree(ctx, arg, root_st, 1, NULL, top, tot, last_root);
 	} else {
 		r->root(ctx, arg, NULL, root_st);
 		tot->dirs++; /* root counts as a directory */
@@ -868,7 +877,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		const struct asp_statinfo *fst =
 			(asp_stat_at(AT_FDCWD, root, 0, &rs2) == 0) ? &rs2 : NULL;
 		if (r->tree)
-			r->tree(ctx, root, fst, 0, NULL, tot, last_root);
+			r->tree(ctx, root, fst, 0, NULL, NULL, tot, last_root);
 		else
 			r->root(ctx, root, "error opening dir", fst);
 		if (fst)
@@ -942,38 +951,47 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	}
 
 	if (r->tree) {
-		/* Nested formats (JSON/XML/HTML): build the whole tree, hand it off.
-		 * The renderer counts entries and emits; we just compute the du total. */
+		/* Nested formats (JSON/XML): build the whole tree, hand it off. The
+		 * renderer counts entries and emits; we just compute the du total. */
 		struct entry **top = build_level(&c, d, 1, 0, NULL);
-		if (o->prune && !o->dirsonly)
-			prune_level(top);
-		if (o->duflag) {
-			off_t dusum = du_aggregate(top);
-			if (root_st) {
-				rs.size += dusum;
-				tot->size = rs.size;
-			} else {
-				tot->size = dusum;
+		if (c.root_err) { /* SR-2.12: root itself over --filelimit */
+			r->tree(ctx, root, root_st, 1, c.root_err, NULL, tot, last_root);
+		} else {
+			if (o->prune && !o->dirsonly)
+				prune_level(top);
+			if (o->duflag) {
+				off_t dusum = du_aggregate(top);
+				if (root_st) {
+					rs.size += dusum;
+					tot->size = rs.size;
+				} else {
+					tot->size = dusum;
+				}
 			}
+			r->tree(ctx, root, root_st, 1, NULL, top, tot, last_root);
 		}
-		r->tree(ctx, root, root_st, 1, top, tot, last_root);
 	} else if (needfulltree(o)) {
 		struct entry **top = build_level(&c, d, 1, 0, NULL);
-		if (o->prune && !o->dirsonly)
-			prune_level(top);
-		if (o->duflag) {
-			off_t dusum = du_aggregate(top);
-			if (root_st) { /* root total = root's own size + contents */
-				rs.size += dusum;
-				tot->size = rs.size;
-			} else {
-				tot->size = dusum;
-			}
-		}
-		r->root(ctx, root, NULL, root_st);
-		if (top[0]) /* tree counts the root as a directory only when non-empty */
+		if (c.root_err) { /* SR-2.12: root itself over --filelimit -> 1 dir */
+			r->root(ctx, root, c.root_err, root_st);
 			tot->dirs++;
-		emit_level(&c, top, 1);
+		} else {
+			if (o->prune && !o->dirsonly)
+				prune_level(top);
+			if (o->duflag) {
+				off_t dusum = du_aggregate(top);
+				if (root_st) { /* root total = root's own size + contents */
+					rs.size += dusum;
+					tot->size = rs.size;
+				} else {
+					tot->size = dusum;
+				}
+			}
+			r->root(ctx, root, NULL, root_st);
+			if (top[0]) /* tree counts the root as a directory only when non-empty */
+				tot->dirs++;
+			emit_level(&c, top, 1);
+		}
 	} else {
 		/* Streaming: we can't see emptiness up front, so count the root as a
 		 * directory only if the walk displayed at least one child (any displayed

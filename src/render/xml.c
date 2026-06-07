@@ -222,7 +222,8 @@ static void xml_report(void *ctx, const struct totals *t)
 }
 
 static void xml_tree(void *ctx, const char *rootpath, const struct asp_statinfo *st,
-		     int opened, struct entry **top, struct totals *tot, int last_root)
+		     int opened, const char *limit_err, struct entry **top,
+		     struct totals *tot, int last_root)
 {
 	struct xml_ctx *x = ctx;
 	(void)last_root;
@@ -268,6 +269,23 @@ static void xml_tree(void *ctx, const char *rootpath, const struct asp_statinfo 
 	asp_html_encode(&x->out, rootpath);
 	dstr_appendc(&x->out, '"');
 	xfillinfo(x, st ? &rstz : NULL);
+
+	/* Root tripped --filelimit: a directory whose only content is the error,
+	 * counted as one directory (SR-2.12). */
+	if (limit_err) {
+		tot->dirs++;
+		dstr_appendz(&x->out, "><error>");
+		dstr_appendz(&x->out, limit_err);
+		dstr_appendz(&x->out, "</error>");
+		dstr_appendz(&x->out, xnl(x));
+		xindent(x, 0);
+		dstr_appendz(&x->out, "</");
+		dstr_appendz(&x->out, rtag);
+		dstr_appendc(&x->out, '>');
+		dstr_appendz(&x->out, xnl(x));
+		return;
+	}
+
 	dstr_appendc(&x->out, '>');
 	dstr_appendz(&x->out, xnl(x));
 	if (top[0]) /* tree counts the root as a directory only when non-empty */

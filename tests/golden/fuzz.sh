@@ -45,9 +45,9 @@ norm() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /; s/^usage: tree /usage: PROG
 #   -R (writes 00Tree.html into the tree), -o (writes a file / empties stdout),
 #   -H/-T (HTML embeds aspen's own name+version), --help/--version (not a walk),
 #   -P/-I (need a separate pattern arg; pattern matching is golden-covered),
-#   --filelimit (root-as-over-limit-arg is the deferred SR-2.12 divergence, which
-#     a random root with >N entries hits constantly; re-add once 2.12 lands — the
-#     child filelimit path is already golden-covered and correct),
+#   --filelimit (SR-2.12 landed, but a random root over the limit still deviates:
+#     rc is 2 vs tree's 0 outside full-tree modes (D1, not normalizable here), and
+#     --du/-d root variants differ in output. Covered by golden + deviations.sh),
 #   --inodes/--device (DEVIATION D4: aspen's -J/-X print a symlink's OWN ino/dev;
 #     tree prints the target's, 0 for broken — the link-vs-target numbers differ
 #     with no fixed transform to normalize. Covered by golden %M + deviations.sh).
