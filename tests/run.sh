@@ -60,6 +60,13 @@ if [ -f tests/golden/pty.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# -o FILE content parity (SR-0.4): the written file matches tree's stdout.
+if [ -f tests/golden/outfile.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/outfile.sh; then
+		fail=1
+	fi
+fi
+
 # Deep-tree fd robustness (Sprint 11c): soft fd limit raised to hard.
 if [ -f tests/golden/fdlimit.sh ] && [ -x ./aspen ]; then
 	if ! sh tests/golden/fdlimit.sh; then

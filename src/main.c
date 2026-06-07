@@ -4,12 +4,15 @@
  * --asp-debug-walk hook, parses the rest with the tree-compatible parser, and
  * dispatches to the unix renderer. Diagnostics say "aspen"; see .docs/.
  */
+#include <fcntl.h>
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
 #include <unistd.h>
+
+#include "version.h"
 
 #include "color.h"
 #include "entry.h"
@@ -99,6 +102,20 @@ int main(int argc, char **argv)
 		roots[1] = NULL;
 	}
 
+	/* -o FILE: write output to a file instead of stdout (diagnostics stay on
+	 * stderr). tree's wording + exit on open failure. */
+	int outfd = STDOUT_FILENO;
+	if (o.outfilename) {
+		outfd = open(o.outfilename, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+		if (outfd < 0) {
+			fprintf(stderr, "%s: invalid filename '%s'\n", ASP_PROGNAME,
+				o.outfilename);
+			free(fav);
+			free((void *)roots);
+			return 1;
+		}
+	}
+
 	int rc;
 	if (debug) {
 		struct totals t;
@@ -106,12 +123,12 @@ int main(int argc, char **argv)
 		fprintf(stderr, "[debug] %lu directories, %lu files\n", t.dirs, t.files);
 	} else if (o.format == OUT_JSON) {
 		struct json_ctx j;
-		json_ctx_init(&j, STDOUT_FILENO, &o);
+		json_ctx_init(&j, outfd, &o);
 		rc = render_tree(roots, &o, &asp_json_renderer, &j, NULL);
 		json_ctx_destroy(&j);
 	} else if (o.format == OUT_XML) {
 		struct xml_ctx x;
-		xml_ctx_init(&x, STDOUT_FILENO, &o);
+		xml_ctx_init(&x, outfd, &o);
 		rc = render_tree(roots, &o, &asp_xml_renderer, &x, NULL);
 		xml_ctx_destroy(&x);
 	} else if (o.format == OUT_HTML) {
@@ -119,20 +136,22 @@ int main(int argc, char **argv)
 		 * bit; flag colorize so the traversal stats entries (tree always does). */
 		o.colorize = o.forcecolor;
 		struct html_ctx hc;
-		html_ctx_init(&hc, STDOUT_FILENO, mb, &o);
+		html_ctx_init(&hc, outfd, mb, &o);
 		rc = render_tree(roots, &o, &asp_html_renderer, &hc, NULL);
 		html_ctx_destroy(&hc);
 	} else {
 		struct colorizer col;
-		color_init(&col, &o, STDOUT_FILENO);
+		color_init(&col, &o, outfd);
 		o.colorize = col.enabled;
 		struct unix_ctx u;
-		unix_ctx_init(&u, STDOUT_FILENO, mb, &o, &col);
+		unix_ctx_init(&u, outfd, mb, &o, &col);
 		rc = render_tree(roots, &o, &asp_unix_renderer, &u, NULL);
 		unix_ctx_destroy(&u);
 		color_free(&col);
 	}
 
+	if (outfd != STDOUT_FILENO)
+		close(outfd);
 	free(fav);
 	free((void *)roots);
 	return rc;

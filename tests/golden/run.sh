@@ -83,6 +83,9 @@ CASES='%C
 --noreport -d %R/onlyfiles
 -J --inodes %M
 -X --device %M
+-o %O %M
+-o %O -J %M
+-o %O -H . --hintro=%h --houtro=%o %M
 -a %W
 -F %W
 %L
@@ -261,7 +264,7 @@ normprog() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /'; }
 
 run_case() { # <bin> <case-string>
 	_bin=$1
-	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g; s#%G#$gign#g; s#%I#$inf#g; s#%h#$work/hintro#g; s#%o#$work/houtro#g; s#%F#$ff#g; s#%E#$dep#g; s#%R#$rts#g")
+	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g; s#%G#$gign#g; s#%I#$inf#g; s#%h#$work/hintro#g; s#%o#$work/houtro#g; s#%F#$ff#g; s#%E#$dep#g; s#%R#$rts#g; s#%O#$work/ofile#g")
 	_oi=$IFS
 	IFS=' 	'
 	set -f # no globbing: pattern args like *.txt must reach the binary verbatim
