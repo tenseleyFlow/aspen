@@ -196,9 +196,10 @@ static void emit_info(struct unix_ctx *u, const struct asp_statinfo *st)
 	}
 }
 
-static void ux_root(void *ctx, const char *path, int failed, const struct asp_statinfo *st)
+static void ux_root(void *ctx, const char *path, const char *err, const struct asp_statinfo *st)
 {
 	struct unix_ctx *u = ctx;
+	int failed = (err != NULL); /* failed-open OR over-limit: same display path */
 	size_t plen = strlen(path);
 	if (u->hyper) { /* per-root: resolve absolute base + offset */
 		if (realpath(path, u->realbase) == NULL) {
@@ -229,8 +230,11 @@ static void ux_root(void *ctx, const char *path, int failed, const struct asp_st
 		if (fc)
 			dstr_appendc(&u->out, fc);
 	}
-	if (failed)
-		dstr_appendz(&u->out, "  [error opening dir]");
+	if (err) {
+		dstr_appendz(&u->out, "  [");
+		dstr_appendz(&u->out, err);
+		dstr_appendc(&u->out, ']');
+	}
 	dstr_appendc(&u->out, '\n');
 	maybe_flush(u);
 }

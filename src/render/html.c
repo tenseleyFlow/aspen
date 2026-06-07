@@ -214,9 +214,10 @@ static void html_end(void *ctx)
 	hflush(h);
 }
 
-static void html_root(void *ctx, const char *path, int failed, const struct asp_statinfo *st)
+static void html_root(void *ctx, const char *path, const char *err, const struct asp_statinfo *st)
 {
 	struct html_ctx *h = ctx;
+	int failed = (err != NULL); /* failed-open OR over-limit: same display path */
 	h->htmldirlen = strlen(path);
 	dstr_appendc(&h->out, '\t'); /* root line is indented like tree's html */
 	emit_info(h, st);
@@ -234,8 +235,11 @@ static void html_root(void *ctx, const char *path, int failed, const struct asp_
 		asp_html_encode(&h->out, path);
 		dstr_appendz(&h->out, "</a>");
 	}
-	if (failed)
-		dstr_appendz(&h->out, "  [error opening dir]");
+	if (err) {
+		dstr_appendz(&h->out, "  [");
+		dstr_appendz(&h->out, err);
+		dstr_appendc(&h->out, ']');
+	}
 	dstr_appendz(&h->out, "<br>\n"); /* root self-terminates, like ux_root's '\n' */
 	hmaybe(h);
 }

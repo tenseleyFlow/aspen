@@ -797,7 +797,7 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 		if (r->tree)
 			r->tree(ctx, arg, NULL, 0, NULL, tot, last_root);
 		else
-			r->root(ctx, arg, 1, NULL);
+			r->root(ctx, arg, "error opening dir", NULL);
 		(*errors)++;
 		asp_fnode_free(ftop);
 		return;
@@ -837,7 +837,7 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	if (r->tree) {
 		r->tree(ctx, arg, root_st, 1, top, tot, last_root);
 	} else {
-		r->root(ctx, arg, 0, root_st);
+		r->root(ctx, arg, NULL, root_st);
 		tot->dirs++; /* root counts as a directory */
 		emit_level(&c, top, 1);
 	}
@@ -870,7 +870,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		if (r->tree)
 			r->tree(ctx, root, fst, 0, NULL, tot, last_root);
 		else
-			r->root(ctx, root, 1, fst);
+			r->root(ctx, root, "error opening dir", fst);
 		if (fst)
 			tot->files++;
 		else
@@ -970,7 +970,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 				tot->size = dusum;
 			}
 		}
-		r->root(ctx, root, 0, root_st);
+		r->root(ctx, root, NULL, root_st);
 		if (top[0]) /* tree counts the root as a directory only when non-empty */
 			tot->dirs++;
 		emit_level(&c, top, 1);
@@ -979,7 +979,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		 * directory only if the walk displayed at least one child (any displayed
 		 * descendant means the root listing was non-empty), matching tree. */
 		unsigned long before = tot->dirs + tot->files;
-		r->root(ctx, root, 0, root_st);
+		r->root(ctx, root, NULL, root_st);
 		walk_dir(&c, d, 1);
 		if (tot->dirs + tot->files > before)
 			tot->dirs++;

@@ -12,8 +12,8 @@
 
 struct renderer {
 	void (*begin)(void *ctx);                       /* document intro (noop for unix) */
-	void (*root)(void *ctx, const char *path, int failed,
-		     const struct asp_statinfo *st);    /* root line (+ bracket / error) */
+	void (*root)(void *ctx, const char *path, const char *err,
+		     const struct asp_statinfo *st);    /* root line; err!=NULL appended as "  [err]" */
 	void (*entry)(void *ctx, const struct entry *e, const char *path,
 		      int depth, int is_last);          /* indent + name + link, NO newline */
 	void (*error)(void *ctx, const char *msg);      /* "  [<msg>]" */
