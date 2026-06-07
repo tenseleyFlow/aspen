@@ -453,7 +453,10 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 
 	/* --filelimit: a directory with more than N listable entries is not opened;
 	 * it shows the marker (via owner->err, rendered like an error node) and its
-	 * contents are skipped. Root-as-the-over-limit-arg is handled in SR-1. */
+	 * contents are skipped. The ROOT as the over-limit arg (owner==NULL) is a
+	 * separate, mode-dependent quirk (plain: "N entries…"+1 dir; --du: renders
+	 * like a failed open, "error opening dir"+1 file) tracked in SR-2.10, where
+	 * the root/child unification belongs — not handled here yet. */
 	if (o->filelimit > 0 && owner && ev.n > (size_t)o->filelimit) {
 		char m[80];
 		snprintf(m, sizeof m, "%zu entries exceeds filelimit, not opening dir", ev.n);

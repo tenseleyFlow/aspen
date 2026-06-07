@@ -81,6 +81,23 @@ CASES='%C
 --noreport -J %R/onlyfiles
 --noreport -X %R/onlyfiles
 --noreport -d %R/onlyfiles
+%R/afifo
+%R/abroken
+%R/asymdir
+-F %R/afifo
+-F %R/anexec
+-F %R/abroken
+-F %R/asymdir
+-dF %R/afifo
+-F -s %R/afifo
+-l %R/asymdir
+-p %R/asymdir
+-s %R/asymdir
+--inodes %R/asymdir
+-pugs %R/asymdir
+-J -F %R/afifo
+-X -F %R/afifo
+-H . --hintro=%h --houtro=%o -F %R/afifo
 -J --inodes %M
 -X --device %M
 -o %O %M
