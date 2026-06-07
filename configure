@@ -63,6 +63,19 @@ HAS_PTHREAD=$(try_compile pthread '
 #include <pthread.h>
 int main(void){ return (int)pthread_self()==0; }' '-lpthread')
 
+# We do NOT link -lpthread: the stat pool dlopen()s the thread runtime on demand
+# (pool.c), so a serial run pays none of libthr's startup cost (a tiny `-L 1`
+# walk would otherwise be slower than tree on FreeBSD). We only need dlopen/dlsym
+# — in libc on FreeBSD/musl/macOS and glibc>=2.34, else via -ldl.
+NEED_LDL=0
+if [ "$(try_compile dl_libc '
+#include <dlfcn.h>
+int main(void){ return dlopen("",0)!=0; }' '')" != 1 ]; then
+	[ "$(try_compile dl_ldl '
+#include <dlfcn.h>
+int main(void){ return dlopen("",0)!=0; }' '-ldl')" = 1 ] && NEED_LDL=1
+fi
+
 # Pick the directory-read backend (Linux: getdents64; BSD/macOS: getdirentries; else readdir)
 DIR_BACKEND=readdir
 [ "$HAS_GETDIRENTRIES" = 1 ] && DIR_BACKEND=getdirentries
@@ -92,7 +105,7 @@ ASP_HAS_LIBURING = $HAS_LIBURING
 ASP_HAS_PTHREAD = $HAS_PTHREAD
 EOF
 [ "$HAS_LIBURING" = 1 ] && echo 'LDLIBS_OPT += -luring' >> config.mk
-[ "$HAS_PTHREAD" = 1 ]  && echo 'LDLIBS_OPT += -lpthread' >> config.mk
+[ "$NEED_LDL" = 1 ]     && echo 'LDLIBS_OPT += -ldl' >> config.mk
 
-echo "configure: dir-backend=$DIR_BACKEND statx=$HAS_STATX liburing=$HAS_LIBURING pthread=$HAS_PTHREAD"
+echo "configure: dir-backend=$DIR_BACKEND statx=$HAS_STATX liburing=$HAS_LIBURING pthread=$HAS_PTHREAD(dlopen) ldl=$NEED_LDL"
 echo "configure: wrote config.h, config.mk"
