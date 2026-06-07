@@ -81,6 +81,11 @@ CASES='%C
 --noreport -J %R/onlyfiles
 --noreport -X %R/onlyfiles
 --noreport -d %R/onlyfiles
+%R/derr
+-J %R/derr
+-X %R/derr
+-L 2 %R/derr
+-s -D %R/derr
 %R/afifo
 %R/abroken
 %R/asymdir

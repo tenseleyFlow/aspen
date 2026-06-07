@@ -28,6 +28,14 @@ mkfifo "$d/afifo" 2>/dev/null || :               # fifo root           -> '|'
 ln -s nonexistent-target "$d/abroken"            # broken symlink root -> '@'
 ln -s onlyfiles "$d/asymdir"                     # symlink-to-dir root -> '@'
 
+# Nested error path (SR-1.8): a readable tree with an unreadable dir partway
+# down, so "[error opening dir]" appears mid-tree (not at the root) and the walk
+# continues past it. Deterministic counterpart to the fuzzer's random errors.
+# (Under a root euid — e.g. FreeBSD CI — 0000 is bypassed; aspen still matches
+# tree, both just listing it, so the golden case holds either way.)
+mkdir -p "$d/derr/keep/leaf" "$d/derr/noread"; : > "$d/derr/keep/leaf/f"
+: > "$d/derr/top.txt"; chmod 000 "$d/derr/noread"
+
 # --filelimit: big exceeds, small does not; a file after big exercises tree's
 # JSON "flag.J && errors" quirk (later entries get a spurious empty contents).
 mkdir -p "$d/fl/big" "$d/fl/small"
