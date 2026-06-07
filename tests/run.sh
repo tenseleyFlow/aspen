@@ -108,6 +108,22 @@ if [ -f tests/golden/threads.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# Intentional deviations (SR-1.3): aspen does the correct thing where tree has a
+# bug; assert aspen's correct behaviour so it can't regress toward tree's bug.
+if [ -f tests/golden/deviations.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/deviations.sh; then
+		fail=1
+	fi
+fi
+
+# Differential fuzzer (SR-1.3): seeded random trees vs tree 2.3.2. Small N here
+# (CI gate); a nightly job runs FUZZ_N in the thousands.
+if [ -f tests/golden/fuzz.sh ] && [ -x ./aspen ]; then
+	if ! FUZZ_N=${FUZZ_N:-60} sh tests/golden/fuzz.sh; then
+		fail=1
+	fi
+fi
+
 # Golden parity suite (present once tests/golden/run.sh lands).
 if [ -x tests/golden/run.sh ]; then
 	if ! sh tests/golden/run.sh; then

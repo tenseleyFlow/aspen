@@ -461,10 +461,10 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 		char m[80];
 		snprintf(m, sizeof m, "%zu entries exceeds filelimit, not opening dir", ev.n);
 		owner->err = arena_strdup(&c->arena, m);
-		/* tree counts filelimit as an error (rc 2) only on its streaming path;
-		 * with --du/--prune/--matchdirs (full-tree) it shows the marker but rc 0. */
-		if (!(o->duflag || o->prune || o->matchdirs))
-			(*c->errors)++;
+		/* DEVIATION D1: a tripped filelimit is an error -> exit 2, in EVERY mode.
+		 * tree exits 2 only on its streaming path and wrongly reports 0 under
+		 * --du/--prune/--matchdirs; aspen is consistent. See .docs/deviations.md. */
+		(*c->errors)++;
 		if (inf)
 			infostack_pop(&c->istack);
 		if (ig)

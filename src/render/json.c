@@ -17,7 +17,6 @@ void json_ctx_init(struct json_ctx *j, int fd, const struct options *o)
 	dstr_init(&j->out);
 	j->fd = fd;
 	j->o = o;
-	j->seen_err = 0;
 }
 
 void json_ctx_destroy(struct json_ctx *j)
@@ -211,16 +210,9 @@ static void jemit_level(struct json_ctx *j, struct entry **arr, int depth, struc
 			dstr_appendz(&j->out, "]}");
 			dstr_appendz(&j->out, last ? "" : ",");
 			dstr_appendz(&j->out, jnl(j));
-			j->seen_err = 1;
-		} else if (j->seen_err) {
-			/* tree faithful-bug: after any error, -J gives every later entry an
-			 * empty "contents":[    ] (descend bumped by flag.J && errors). */
-			dstr_appendz(&j->out, ",\"contents\":[");
-			if (!j->o->noindent)
-				dstr_appendz(&j->out, "    ");
-			dstr_appendz(&j->out, "]}");
-			dstr_appendz(&j->out, last ? "" : ",");
-			dstr_appendz(&j->out, jnl(j));
+			/* DEVIATION D2: tree, once any error occurs, gives EVERY later entry
+			 * a spurious empty "contents":[    ] (its flag.J && errors quirk),
+			 * producing misleading JSON. aspen does not — see .docs/deviations.md. */
 		} else {
 			dstr_appendc(&j->out, '}');
 			dstr_appendz(&j->out, last ? "" : ",");
