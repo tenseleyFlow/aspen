@@ -32,10 +32,18 @@ d1() { # <desc> <target> <flags...>
 	fi
 }
 
-d1 "--du perm"         "$dv/perm" --du
-d1 "--prune perm"      "$dv/perm" --prune
-d1 "--matchdirs perm"  "$dv/perm" --matchdirs
-d1 "--du -J perm"      "$dv/perm" --du -J
+# The unreadable-dir trigger needs a non-root euid (root bypasses 0000 perms, so
+# opendir succeeds and there is legitimately no error — e.g. the FreeBSD CI VM
+# runs as root). The filelimit trigger below is permission-independent and runs
+# everywhere, so D1 is still asserted on every platform.
+if [ "$(id -u 2>/dev/null || echo 0)" != 0 ]; then
+	d1 "--du perm"         "$dv/perm" --du
+	d1 "--prune perm"      "$dv/perm" --prune
+	d1 "--matchdirs perm"  "$dv/perm" --matchdirs
+	d1 "--du -J perm"      "$dv/perm" --du -J
+else
+	echo "DEVIATIONS: running as root — skipping permission-based D1 cases (filelimit covers D1)"
+fi
 d1 "--filelimit+du"    "$dv/fl"   --filelimit 3 --du
 d1 "--filelimit+prune" "$dv/fl"   --filelimit 3 --prune
 
