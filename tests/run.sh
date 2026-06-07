@@ -39,6 +39,19 @@ for t in tests/unit/*_test.c; do
 	fi
 done
 
+# SR-1.5: the Makefile uses an explicit SRC list (deterministic + bmake-proof).
+# Guard against drift — a new src/*.c silently omitted from the build is exactly
+# the footgun the explicit list traded for. Compare the list to the glob.
+sed -n '/^SRC = /,/[^\\]$/p' Makefile | sed 's/^SRC = //; s/\\//g' | tr -s ' \t' '\n' | grep '\.c$' | sort >"$work/mk_src"
+ls src/*.c src/sys/*.c src/render/*.c 2>/dev/null | sort >"$work/fs_src"
+if ! diff -q "$work/mk_src" "$work/fs_src" >/dev/null 2>&1; then
+	echo "SRCLIST: Makefile SRC list is out of sync with src/*.c:"
+	diff "$work/mk_src" "$work/fs_src" | sed -n '1,20p'
+	fail=1
+else
+	echo "SRCLIST: Makefile SRC matches src/ ($(wc -l <"$work/fs_src" | tr -d ' ') files)"
+fi
+
 # Discovery check (Sprint 01): traversal must find exactly what tree finds.
 if [ -x tests/golden/walk.sh ] && [ -x ./aspen ]; then
 	if ! sh tests/golden/walk.sh; then
