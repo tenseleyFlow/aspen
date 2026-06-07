@@ -37,6 +37,8 @@ ff="$work/ff"
 sh "$here/mkff.sh" "$ff" >/dev/null
 dep="$work/deepchain"
 sh "$here/mkdeep.sh" "$dep" >/dev/null
+rts="$work/roots"
+sh "$here/mkroots.sh" "$rts" >/dev/null
 
 # Fixed empty intro/outtro: -H's default document embeds the program name and
 # version (legitimately "aspen", not "tree"), so golden-test the HTML *body* with
@@ -61,6 +63,26 @@ CASES='%C
 -L 1 %C
 --noreport %C
 -x %C
+%R/empty
+-J %R/empty
+-X %R/empty
+-d %R/empty
+--du %R/empty
+%R/afile
+-J %R/afile
+-X %R/afile
+-s %R/afile
+-J --inodes %R/afile
+-d %R/onlyfiles
+--prune -d %R/pd
+--prune %R/pd
+-J --prune -d %R/pd
+%R/noread
+--noreport -J %R/onlyfiles
+--noreport -X %R/onlyfiles
+--noreport -d %R/onlyfiles
+-J --inodes %M
+-X --device %M
 -a %W
 -F %W
 %L
@@ -238,7 +260,7 @@ normprog() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /'; }
 
 run_case() { # <bin> <case-string>
 	_bin=$1
-	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g; s#%G#$gign#g; s#%I#$inf#g; s#%h#$work/hintro#g; s#%o#$work/houtro#g; s#%F#$ff#g; s#%E#$dep#g")
+	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g; s#%G#$gign#g; s#%I#$inf#g; s#%h#$work/hintro#g; s#%o#$work/houtro#g; s#%F#$ff#g; s#%E#$dep#g; s#%R#$rts#g")
 	_oi=$IFS
 	IFS=' 	'
 	set -f # no globbing: pattern args like *.txt must reach the binary verbatim

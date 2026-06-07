@@ -248,30 +248,50 @@ static void xml_tree(void *ctx, const char *rootpath, const struct asp_statinfo 
 	(void)last_root;
 
 	xindent(x, 0);
-	if (!opened) { /* failed root: descend is forced, so a newline precedes close */
-		dstr_appendz(&x->out, "<unknown name=\"");
+	if (!opened) { /* failed root: tag from lstat (file/...) else "unknown" */
+		const char *ftag = st ? tag_str(asp_type_from_mode(st->mode)) : "unknown";
+		dstr_appendc(&x->out, '<');
+		dstr_appendz(&x->out, ftag);
+		dstr_appendz(&x->out, " name=\"");
 		asp_html_encode(&x->out, rootpath);
-		dstr_appendz(&x->out, "\"><error>error opening dir</error>");
+		dstr_appendc(&x->out, '"');
+		if (st) { /* meta attrs on the failed root; tree zeroes its inode/dev */
+			struct asp_statinfo z = *st;
+			z.ino = 0;
+			z.dev = 0;
+			xfillinfo(x, &z);
+		}
+		dstr_appendz(&x->out, "><error>error opening dir</error>");
 		dstr_appendz(&x->out, xnl(x));
 		xindent(x, 0);
-		dstr_appendz(&x->out, "</unknown>");
+		dstr_appendz(&x->out, "</");
+		dstr_appendz(&x->out, ftag);
+		dstr_appendc(&x->out, '>');
 		dstr_appendz(&x->out, xnl(x));
 		return;
 	}
 
-	/* --fromfile roots take the path-list file's own type; still count as dir. */
+	/* --fromfile roots take the path-list file's own type. tree leaves the root's
+	 * inode/dev at 0 even under --inodes/--device, so zero them on a copy. */
 	const char *rtag = (st && !S_ISDIR(st->mode))
 				   ? tag_str(asp_type_from_mode(st->mode))
 				   : "directory";
+	struct asp_statinfo rstz;
+	if (st) {
+		rstz = *st;
+		rstz.ino = 0;
+		rstz.dev = 0;
+	}
 	dstr_appendc(&x->out, '<');
 	dstr_appendz(&x->out, rtag);
 	dstr_appendz(&x->out, " name=\"");
 	asp_html_encode(&x->out, rootpath);
 	dstr_appendc(&x->out, '"');
-	xfillinfo(x, st);
+	xfillinfo(x, st ? &rstz : NULL);
 	dstr_appendc(&x->out, '>');
 	dstr_appendz(&x->out, xnl(x));
-	tot->dirs++;
+	if (top[0]) /* tree counts the root as a directory only when non-empty */
+		tot->dirs++;
 
 	xemit_level(x, top, 1, tot);
 

@@ -259,10 +259,20 @@ static void json_tree(void *ctx, const char *rootpath, const struct asp_statinfo
 	struct json_ctx *j = ctx;
 
 	jindent(j, 0);
-	if (!opened) { /* failed root: unknown type, error inside contents (tree) */
-		dstr_appendz(&j->out, "{\"type\":\"unknown\",\"name\":\"");
+	if (!opened) { /* failed root: type from lstat (file/...) else "unknown", error in contents */
+		const char *ft = st ? ftype_str(asp_type_from_mode(st->mode)) : "unknown";
+		dstr_appendz(&j->out, "{\"type\":\"");
+		dstr_appendz(&j->out, ft);
+		dstr_appendz(&j->out, "\",\"name\":\"");
 		jenc(&j->out, rootpath);
-		dstr_appendz(&j->out, "\",\"contents\":[{\"error\": \"error opening dir\"}");
+		dstr_appendc(&j->out, '"');
+		if (st) { /* meta columns on the failed root; tree zeroes its inode/dev */
+			struct asp_statinfo z = *st;
+			z.ino = 0;
+			z.dev = 0;
+			jfillinfo(j, &z);
+		}
+		dstr_appendz(&j->out, ",\"contents\":[{\"error\": \"error opening dir\"}");
 		dstr_appendz(&j->out, jnl(j));
 		jindent(j, 0);
 		dstr_appendz(&j->out, "]}");
@@ -272,24 +282,36 @@ static void json_tree(void *ctx, const char *rootpath, const struct asp_statinfo
 	}
 
 	/* Normally the root is a real directory; --fromfile roots take the type of
-	 * the path-list file itself (e.g. "file"), but still count as a directory. */
+	 * the path-list file itself (e.g. "file"). tree leaves the root's inode/dev
+	 * at 0 even under --inodes/--device, so zero them on a copy here. */
 	const char *rtype = (st && !S_ISDIR(st->mode))
 				    ? ftype_str(asp_type_from_mode(st->mode))
 				    : "directory";
+	struct asp_statinfo rstz;
+	if (st) {
+		rstz = *st;
+		rstz.ino = 0;
+		rstz.dev = 0;
+	}
 	dstr_appendz(&j->out, "{\"type\":\"");
 	dstr_appendz(&j->out, rtype);
 	dstr_appendz(&j->out, "\",\"name\":\"");
 	jenc(&j->out, rootpath);
 	dstr_appendc(&j->out, '"');
-	jfillinfo(j, st);
-	dstr_appendz(&j->out, ",\"contents\":[");
-	dstr_appendz(&j->out, jnl(j));
-	tot->dirs++; /* root counts as a directory */
+	jfillinfo(j, st ? &rstz : NULL);
 
-	jemit_level(j, top, 1, tot);
-
-	jindent(j, 0);
-	dstr_appendz(&j->out, "]}");
+	/* tree counts the root as a directory and emits "contents" only when it has
+	 * at least one child; an empty root is just {type,name} and counts 0. */
+	if (top && top[0]) {
+		tot->dirs++;
+		dstr_appendz(&j->out, ",\"contents\":[");
+		dstr_appendz(&j->out, jnl(j));
+		jemit_level(j, top, 1, tot);
+		jindent(j, 0);
+		dstr_appendz(&j->out, "]}");
+	} else {
+		dstr_appendc(&j->out, '}');
+	}
 	dstr_appendz(&j->out, last_root ? "" : ",");
 	dstr_appendz(&j->out, jnl(j));
 	jmaybe(j);

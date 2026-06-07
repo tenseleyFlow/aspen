@@ -711,7 +711,7 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	inoset_init(&c.seen);
 
 	struct entry **top = synth_level(&c, ftop, 0);
-	if (o->prune)
+	if (o->prune && !o->dirsonly)
 		prune_level(top);
 	if (o->duflag) {
 		off_t dusum = du_aggregate(top);
@@ -743,11 +743,21 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 
 	struct asp_dir *d;
 	if (asp_diropen(root, &d) != 0) {
+		/* tree: lstat the root. If it exists (a non-directory, or a directory we
+		 * cannot open) it is shown "[error opening dir]" and counted as ONE FILE
+		 * with rc 0; only a root that does not stat at all is an error (rc 2).
+		 * Nested renderers type the failed root from this stat (e.g. "file"). */
+		struct asp_statinfo rs2;
+		const struct asp_statinfo *fst =
+			(asp_stat_at(AT_FDCWD, root, 0, &rs2) == 0) ? &rs2 : NULL;
 		if (r->tree)
-			r->tree(ctx, root, NULL, 0, NULL, tot, last_root);
+			r->tree(ctx, root, fst, 0, NULL, tot, last_root);
 		else
-			r->root(ctx, root, 1, NULL);
-		(*errors)++;
+			r->root(ctx, root, 1, fst);
+		if (fst)
+			tot->files++;
+		else
+			(*errors)++;
 		return;
 	}
 
@@ -830,7 +840,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		/* Nested formats (JSON/XML/HTML): build the whole tree, hand it off.
 		 * The renderer counts entries and emits; we just compute the du total. */
 		struct entry **top = build_level(&c, d, 1, 0);
-		if (o->prune)
+		if (o->prune && !o->dirsonly)
 			prune_level(top);
 		if (o->duflag) {
 			off_t dusum = du_aggregate(top);
@@ -844,7 +854,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		r->tree(ctx, root, root_st, 1, top, tot, last_root);
 	} else if (needfulltree(o)) {
 		struct entry **top = build_level(&c, d, 1, 0);
-		if (o->prune)
+		if (o->prune && !o->dirsonly)
 			prune_level(top);
 		if (o->duflag) {
 			off_t dusum = du_aggregate(top);
@@ -856,12 +866,18 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 			}
 		}
 		r->root(ctx, root, 0, root_st);
-		tot->dirs++;
+		if (top[0]) /* tree counts the root as a directory only when non-empty */
+			tot->dirs++;
 		emit_level(&c, top, 1);
 	} else {
+		/* Streaming: we can't see emptiness up front, so count the root as a
+		 * directory only if the walk displayed at least one child (any displayed
+		 * descendant means the root listing was non-empty), matching tree. */
+		unsigned long before = tot->dirs + tot->files;
 		r->root(ctx, root, 0, root_st);
-		tot->dirs++;
 		walk_dir(&c, d, 1);
+		if (tot->dirs + tot->files > before)
+			tot->dirs++;
 	}
 
 	asp_dirclose(d);
