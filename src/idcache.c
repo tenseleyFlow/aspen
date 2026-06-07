@@ -59,3 +59,18 @@ const char *gidtoname(gid_t gid)
 {
 	return lookup(&gcache, &gn, &gcap, (unsigned long)gid, 0);
 }
+
+static void free_cache(struct identry **arr, size_t *n, size_t *cap)
+{
+	for (size_t i = 0; i < *n; i++)
+		free((*arr)[i].name);
+	free(*arr);
+	*arr = NULL;
+	*n = *cap = 0;
+}
+
+void idcache_free(void)
+{
+	free_cache(&ucache, &un, &ucap);
+	free_cache(&gcache, &gn, &gcap);
+}

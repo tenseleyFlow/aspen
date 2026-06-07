@@ -16,6 +16,7 @@
 
 #include "color.h"
 #include "entry.h"
+#include "idcache.h"
 #include "options.h"
 #include "render.h"
 #include "render/html.h"
@@ -156,6 +157,7 @@ int main(int argc, char **argv)
 
 	if (outfd != STDOUT_FILENO)
 		close(outfd);
+	idcache_free(); /* clean shutdown: release the -u/-g name caches */
 	free(fav);
 	free((void *)roots);
 	return rc;

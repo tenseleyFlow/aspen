@@ -9,4 +9,9 @@
 const char *uidtoname(uid_t uid);
 const char *gidtoname(gid_t gid);
 
+/* Release the caches (clean shutdown / leak-sanitizer cleanliness). The cache is
+ * retained for the process lifetime by design — it avoids repeated getpwuid/
+ * getgrgid NSS lookups for -u/-g over many files — so this is only for exit. */
+void idcache_free(void);
+
 #endif /* ASP_IDCACHE_H */
