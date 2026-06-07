@@ -16,8 +16,9 @@ size_t asp_fillinfo(char *buf, size_t bufsz, const struct options *o,
 		    const struct asp_statinfo *st);
 
 /* Format a size into buf (tree's psize: " %4d"/" %3.1fK"/" %11lld" forms);
- * returns the byte count. Exposed for the --du report. */
-int asp_psize(char *buf, const struct options *o, off_t size);
+ * returns the byte count (snprintf semantics, bounded by bufsz). Exposed for
+ * the --du report. */
+int asp_psize(char *buf, size_t bufsz, const struct options *o, off_t size);
 
 /* ls-style permission string ("drwxr-xr-x"); shared with JSON/XML. */
 const char *asp_prot(mode_t m);

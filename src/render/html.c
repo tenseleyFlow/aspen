@@ -108,7 +108,7 @@ static void html_print(struct html_ctx *h, const char *s)
 
 static void emit_info(struct html_ctx *h, const struct asp_statinfo *st)
 {
-	char info[256];
+	char info[512]; /* match tree info[512] */
 	size_t n = asp_fillinfo(info, sizeof info, h->o, st);
 	if (n && info[0] == '[') {
 		html_print(h, info);
@@ -298,7 +298,7 @@ static void html_report(void *ctx, const struct totals *t)
 	dstr_appendz(&h->out, "<br><br><p>\n\n");
 	if (h->o->duflag) {
 		char sb[64];
-		asp_psize(sb, h->o, t->size);
+		asp_psize(sb, sizeof sb, h->o, t->size);
 		dstr_appendz(&h->out, sb);
 		dstr_appendz(&h->out, (h->o->humanflag || h->o->siflag) ? " used in " : " bytes used in ");
 	}

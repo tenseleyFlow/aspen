@@ -28,7 +28,7 @@ const char *asp_prot(mode_t m)
 	return buf;
 }
 
-int asp_psize(char *buf, const struct options *o, off_t size)
+int asp_psize(char *buf, size_t bufsz, const struct options *o, off_t size)
 {
 	static const char iec[] = "BKMGTPEZY", si[] = "dkMGTPEZY";
 	const char *unit = o->siflag ? si : iec;
@@ -39,12 +39,12 @@ int asp_psize(char *buf, const struct options *o, off_t size)
 		for (idx = size < usize ? 0 : 1; size >= (off_t)(usize * usize); idx++, size /= usize)
 			;
 		if (!idx)
-			return sprintf(buf, " %4d", (int)size);
-		return sprintf(buf, (((size + 52) / usize) >= 10) ? " %3.0f%c" : " %3.1f%c",
-			       (double)size / (double)usize, unit[idx]);
+			return snprintf(buf, bufsz, " %4d", (int)size);
+		return snprintf(buf, bufsz, (((size + 52) / usize) >= 10) ? " %3.0f%c" : " %3.1f%c",
+				(double)size / (double)usize, unit[idx]);
 	}
-	return sprintf(buf, sizeof(off_t) == sizeof(long long) ? " %11lld" : " %9lld",
-		       (long long)size);
+	return snprintf(buf, bufsz, sizeof(off_t) == sizeof(long long) ? " %11lld" : " %9lld",
+			(long long)size);
 }
 
 #define SIXMONTHS (6 * 31 * 24 * 60 * 60)
@@ -69,30 +69,52 @@ const char *asp_do_date(const struct options *o, time_t t)
 size_t asp_fillinfo(char *buf, size_t bufsz, const struct options *o,
 		    const struct asp_statinfo *st)
 {
-	int n = 0;
+	/* Each column is appended with bounded writes; n is advanced by the bytes
+	 * ACTUALLY written (snprintf/asp_psize report the would-have-written count,
+	 * which can exceed the remaining space for a long --timefmt). Clamping here
+	 * is what prevents an out-of-bounds write and an over-long return that the
+	 * caller would then over-read. The buffer matches tree's info[512] so no
+	 * truncation occurs for real inputs (do_date caps the date at 255). */
+	size_t n = 0;
+	if (bufsz == 0)
+		return 0;
 	buf[0] = '\0';
 	if (!st)
 		return 0;
 
+#define ADV(call)                                                       \
+	do {                                                            \
+		if (n + 1 < bufsz) {                                    \
+			int _r = (call);                               \
+			if (_r > 0) {                                  \
+				size_t _w = (size_t)_r;                \
+				if (_w > bufsz - 1 - n)                \
+					_w = bufsz - 1 - n;            \
+				n += _w;                               \
+			}                                              \
+		}                                                      \
+	} while (0)
+
 	if (o->inodeflag)
-		n += snprintf(buf + n, bufsz - (size_t)n, " %7lld", (long long)st->ino);
+		ADV(snprintf(buf + n, bufsz - n, " %7lld", (long long)st->ino));
 	if (o->devflag)
-		n += snprintf(buf + n, bufsz - (size_t)n, " %3d", (int)st->dev);
+		ADV(snprintf(buf + n, bufsz - n, " %3d", (int)st->dev));
 	if (o->permflag)
-		n += snprintf(buf + n, bufsz - (size_t)n, " %s", asp_prot(st->mode));
+		ADV(snprintf(buf + n, bufsz - n, " %s", asp_prot(st->mode)));
 	if (o->userflag)
-		n += snprintf(buf + n, bufsz - (size_t)n, " %-8.32s", uidtoname(st->uid));
+		ADV(snprintf(buf + n, bufsz - n, " %-8.32s", uidtoname(st->uid)));
 	if (o->groupflag)
-		n += snprintf(buf + n, bufsz - (size_t)n, " %-8.32s", gidtoname(st->gid));
+		ADV(snprintf(buf + n, bufsz - n, " %-8.32s", gidtoname(st->gid)));
 	if (o->sizeflag)
-		n += asp_psize(buf + n, o, st->size);
+		ADV(asp_psize(buf + n, bufsz - n, o, st->size));
 	if (o->dateflag)
-		n += snprintf(buf + n, bufsz - (size_t)n, " %s",
-			      asp_do_date(o, o->ctimeflag ? st->ctime : st->mtime));
+		ADV(snprintf(buf + n, bufsz - n, " %s",
+			     asp_do_date(o, o->ctimeflag ? st->ctime : st->mtime)));
 
 	if (buf[0] == ' ') {
 		buf[0] = '[';
-		n += snprintf(buf + n, bufsz - (size_t)n, "]");
+		ADV(snprintf(buf + n, bufsz - n, "]"));
 	}
-	return (size_t)n;
+#undef ADV
+	return n;
 }

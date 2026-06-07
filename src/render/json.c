@@ -127,7 +127,7 @@ static void jfillinfo(struct json_ctx *j, const struct asp_statinfo *st)
 	if (o->sizeflag) {
 		if (o->humanflag || o->siflag) {
 			char nb[64];
-			asp_psize(nb, o, st->size);
+			asp_psize(nb, sizeof nb, o, st->size);
 			char *p = nb;
 			while (*p == ' ')
 				p++;

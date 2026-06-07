@@ -187,7 +187,7 @@ static void ux_comment(void *ctx, const struct entry *e, int depth)
 
 static void emit_info(struct unix_ctx *u, const struct asp_statinfo *st)
 {
-	char info[256];
+	char info[512]; /* match tree info[512] */
 	size_t n = asp_fillinfo(info, sizeof info, u->o, st);
 	if (n) {
 		dstr_append(&u->out, info, n);
@@ -329,7 +329,7 @@ static void ux_report(void *ctx, const struct totals *t)
 	dstr_appendc(&u->out, '\n');
 	if (u->o->duflag) {
 		char sb[64];
-		asp_psize(sb, u->o, t->size); /* leading-space form, like tree */
+		asp_psize(sb, sizeof sb, u->o, t->size); /* leading-space form, like tree */
 		dstr_appendz(&u->out, sb);
 		dstr_appendz(&u->out, (u->o->humanflag || u->o->siflag) ? " used in "
 								       : " bytes used in ");
