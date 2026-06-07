@@ -260,9 +260,12 @@ static void html_entry(void *ctx, const struct entry *e, const char *path, int d
 		emit_info(h, e->st);
 	}
 
+	/* --condense: the path's last segment is the joined "a/b/c" chain. */
+	const char *nm = e->condensed_name ? e->condensed_name : e->name;
+	size_t nmlen = e->condensed_name ? strlen(e->condensed_name) : e->namelen;
 	size_t plen = strlen(path);
-	size_t dirlen = plen - e->namelen - 1;
-	const char *filename = o->fullpath ? path : e->name;
+	size_t dirlen = plen - nmlen - 1;
+	const char *filename = o->fullpath ? path : nm;
 	int descend = dir_like ? 1 : 0;
 	anchor(h, e, path, dirlen, filename, dir_like, descend);
 	hmaybe(h);

@@ -118,7 +118,7 @@ static void xemit_level(struct xml_ctx *x, struct entry **arr, int depth, struct
 		struct entry *e = arr[i];
 		int dir_like = e->type == ASP_DIR || (e->type == ASP_LNK && e->ltype == ASP_DIR);
 		if (dir_like)
-			tot->dirs++;
+			tot->dirs += 1 + e->condensed; /* --condense: absorbed dirs count too */
 		else
 			tot->files++;
 
@@ -126,12 +126,15 @@ static void xemit_level(struct xml_ctx *x, struct entry **arr, int depth, struct
 		int has_kids = e->child && e->child[0];
 		int direrr = dir_like && e->err && !has_kids;
 
-		/* -f: name is the full path (path stack seeded with the root in xml_tree). */
+		/* --condense: collapsed "a/b/c" replaces the name. -f: name is the full
+		 * path (path stack seeded with the root in xml_tree). */
+		const char *dname = e->condensed_name ? e->condensed_name : e->name;
+		size_t dnamelen = e->condensed_name ? strlen(e->condensed_name) : e->namelen;
 		size_t fp_saved = x->fp.len;
-		const char *name = e->name;
+		const char *name = dname;
 		if (x->o->fullpath) {
 			dstr_appendc(&x->fp, '/');
-			dstr_append(&x->fp, e->name, e->namelen);
+			dstr_append(&x->fp, dname, dnamelen);
 			name = x->fp.data;
 		}
 

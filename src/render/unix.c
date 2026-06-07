@@ -255,24 +255,28 @@ static void ux_entry(void *ctx, const struct entry *e, const char *path,
 		emit_info(u, e->st);
 	}
 
+	/* --condense: a collapsed dir shows its joined "a/b/c" name (the path's last
+	 * segment is already the joined chain, set in emit_level). */
+	const char *nm = e->condensed_name ? e->condensed_name : e->name;
+	size_t nmlen = e->condensed_name ? strlen(e->condensed_name) : e->namelen;
 	size_t plen = strlen(path);
-	size_t dirlen = plen - e->namelen - 1; /* path minus "/name" */
+	size_t dirlen = plen - nmlen - 1; /* path minus "/name" */
 
 	/* name: optional OSC-8 link, then color, then the name. */
 	if (u->hyper)
-		open_hyperlink(u, path, dirlen, e->name, e->namelen);
+		open_hyperlink(u, path, dirlen, nm, nmlen);
 	int colored = 0;
 	if (u->col->enabled) {
 		mode_t m = (e->lnk && u->col->linktargetcolor)
 			? e->lmode
 			: (e->st ? e->st->mode : 0);
-		colored = color_apply(u->col, &u->out, m, e->name,
+		colored = color_apply(u->col, &u->out, m, nm,
 				      e->flags & ENT_ORPHAN, 0);
 	}
 	if (o->fullpath)
 		name_print(&u->out, path, plen, u->mb_cur_max, u->np_flags);
 	else
-		name_print(&u->out, e->name, e->namelen, u->mb_cur_max, u->np_flags);
+		name_print(&u->out, nm, nmlen, u->mb_cur_max, u->np_flags);
 	if (colored)
 		color_end(u->col, &u->out);
 	if (u->hyper)

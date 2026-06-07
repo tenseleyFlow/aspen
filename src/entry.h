@@ -29,6 +29,9 @@ struct entry {
 	uint16_t ltype; /* symlink target type when stat-followed, else ASP_UNKNOWN */
 	uint16_t flags;
 	uint16_t _pad;
+	uint32_t condensed;   /* --condense: count of singleton dirs absorbed into this
+			       * one (added back to the dir total at emit); fills the
+			       * alignment gap before ino, so it costs no extra bytes */
 	ino_t ino;            /* cycle/xdev identity: target for links, own otherwise */
 	dev_t dev;
 	mode_t lmode;         /* symlink target mode (for color/-F), when followed */
@@ -37,6 +40,8 @@ struct entry {
 	struct entry **child; /* full-tree mode: NULL-terminated child array, or NULL */
 	const char *err;      /* full-tree mode: per-entry error to render, or NULL */
 	char **info;          /* --info: NULL-terminated annotation lines, or NULL */
+	const char *condensed_name; /* --condense: collapsed "a/b/c" path shown in place
+				     * of name (and pushed onto the path), else NULL */
 	char name[];          /* inline, NUL-terminated */
 };
 

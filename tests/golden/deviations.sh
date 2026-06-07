@@ -41,6 +41,8 @@ if [ "$(id -u 2>/dev/null || echo 0)" != 0 ]; then
 	d1 "--prune perm"      "$dv/perm" --prune
 	d1 "--matchdirs perm"  "$dv/perm" --matchdirs
 	d1 "--du -J perm"      "$dv/perm" --du -J
+	d1 "--condense perm"   "$dv/perm" --condense
+	d1 "--condense -X perm" "$dv/perm" --condense -X
 else
 	echo "DEVIATIONS: running as root — skipping permission-based D1 cases (filelimit covers D1)"
 fi

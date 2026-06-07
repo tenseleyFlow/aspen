@@ -185,7 +185,7 @@ static void fill_link(struct wctx *c, int dirfd, struct entry *e)
 /* Modes that need the whole tree built before emitting. (--fromfile: Sprint 10) */
 static int needfulltree(const struct options *o)
 {
-	return o->duflag || o->prune || o->matchdirs || o->filelimit > 0;
+	return o->duflag || o->prune || o->matchdirs || o->filelimit > 0 || o->condense;
 }
 
 /* Read one directory's entries into ev (entries from the arena). suppress_pat
@@ -488,9 +488,17 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		if (descend && o->xdev && e->type == ASP_DIR && e->dev != c->root_dev)
 			descend = 0;
 		if (descend && o->follow) {
-			if (inoset_has(&c->seen, e->ino, e->dev)) {
-				post_err = "recursive, not followed";
-				descend = 0;
+			/* tree marks only a SYMLINK "recursive, not followed" when its target's
+			 * inode was already seen; a real directory revisited via a symlink (or
+			 * hardlink) is still descended. Seed the set with every descended dir so
+			 * a later symlink pointing at it is caught. */
+			if (e->type == ASP_LNK) {
+				if (inoset_has(&c->seen, e->ino, e->dev)) {
+					post_err = "recursive, not followed";
+					descend = 0;
+				} else {
+					inoset_add(&c->seen, e->ino, e->dev);
+				}
 			} else {
 				inoset_add(&c->seen, e->ino, e->dev);
 			}
@@ -597,9 +605,17 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 		if (descend && o->xdev && e->type == ASP_DIR && e->dev != c->root_dev)
 			descend = 0;
 		if (descend && o->follow) {
-			if (inoset_has(&c->seen, e->ino, e->dev)) {
-				post_err = "recursive, not followed";
-				descend = 0;
+			/* tree marks only a SYMLINK "recursive, not followed" when its target's
+			 * inode was already seen; a real directory revisited via a symlink (or
+			 * hardlink) is still descended. Seed the set with every descended dir so
+			 * a later symlink pointing at it is caught. */
+			if (e->type == ASP_LNK) {
+				if (inoset_has(&c->seen, e->ino, e->dev)) {
+					post_err = "recursive, not followed";
+					descend = 0;
+				} else {
+					inoset_add(&c->seen, e->ino, e->dev);
+				}
 			} else {
 				inoset_add(&c->seen, e->ino, e->dev);
 			}
@@ -636,8 +652,44 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 	return arr; /* pool keeps ev's buffer for the next sibling */
 }
 
-/* Bottom-up --prune of empty directories (not --matchdirs-protected). */
-static void prune_level(struct entry **arr)
+/* --condense: collapse a chain of singleton directories (a dir whose only child
+ * is itself a directory) onto `e`, mirroring tree's is_singleton/condensed loop.
+ * The head must be a real directory (tree only condenses in its non-symlink
+ * branch); the absorbed child may be a followed symlink-to-dir. e->child must be
+ * fully condensed/pruned already (callers run this bottom-up). Under --du the
+ * absorbed dir's own inode size is folded in, since du_aggregate runs afterward
+ * over the collapsed tree and would otherwise lose it. */
+static void condense_entry(struct arena *a, const struct options *o, struct entry *e)
+{
+	while (e->child && e->child[0] && e->child[1] == NULL) {
+		struct entry *only = e->child[0];
+		int only_dir = only->type == ASP_DIR ||
+			       (only->type == ASP_LNK && only->ltype == ASP_DIR);
+		if (!only_dir)
+			break;
+		const char *base = e->condensed_name ? e->condensed_name : e->name;
+		const char *tail = only->condensed_name ? only->condensed_name : only->name;
+		size_t bl = strlen(base), tl = strlen(tail);
+		char *joined = arena_alloc(a, bl + 1 + tl + 1);
+		memcpy(joined, base, bl);
+		joined[bl] = '/';
+		memcpy(joined + bl + 1, tail, tl);
+		joined[bl + 1 + tl] = '\0';
+		e->condensed_name = joined;
+		if (o->duflag && e->st && only->st)
+			((struct asp_statinfo *)e->st)->size += only->st->size;
+		e->child = only->child;
+		e->condensed += 1 + only->condensed;
+	}
+}
+
+/* Bottom-up pass for --condense and/or --prune, interleaved exactly as tree does
+ * it inside getfulltree: a node's subtree is settled first (recursion), then the
+ * node is condensed (so it sees its children already pruned — a dir that lost all
+ * but one child to pruning becomes a fresh singleton), then the parent prunes it
+ * if it ended up empty. do_prune mirrors the caller's `--prune && !-d` guard. */
+static void condense_prune_level(struct entry **arr, struct arena *a,
+				 const struct options *o, int do_prune)
 {
 	size_t n = 0, w = 0;
 	while (arr[n])
@@ -646,10 +698,14 @@ static void prune_level(struct entry **arr)
 		struct entry *e = arr[i];
 		int dir_like = e->type == ASP_DIR || (e->type == ASP_LNK && e->ltype == ASP_DIR);
 		if (dir_like && e->child)
-			prune_level(e->child);
-		int empty = dir_like && (!e->child || e->child[0] == NULL);
-		if (empty && !(e->flags & ENT_MATCHED))
-			continue; /* drop empty dir */
+			condense_prune_level(e->child, a, o, do_prune);
+		if (o->condense && e->type == ASP_DIR)
+			condense_entry(a, o, e);
+		if (do_prune) {
+			int empty = dir_like && (!e->child || e->child[0] == NULL);
+			if (empty && !(e->flags & ENT_MATCHED))
+				continue; /* drop empty dir */
+		}
 		arr[w++] = e;
 	}
 	arr[w] = NULL;
@@ -686,12 +742,17 @@ static void emit_level(struct wctx *c, struct entry **arr, int depth)
 		struct entry *e = arr[i];
 		int is_last = (i + 1 == n);
 
+		/* --condense: the path's last segment is the collapsed "a/b/c" so that
+		 * -f and the children's paths reflect the joined chain (tree's name). */
 		dstr_appendc(&c->path, '/');
-		dstr_append(&c->path, e->name, e->namelen);
+		if (e->condensed_name)
+			dstr_appendz(&c->path, e->condensed_name);
+		else
+			dstr_append(&c->path, e->name, e->namelen);
 
 		int dir_like = e->type == ASP_DIR || (e->type == ASP_LNK && e->ltype == ASP_DIR);
 		if (dir_like)
-			c->tot->dirs++;
+			c->tot->dirs += 1 + e->condensed; /* absorbed singletons count too */
 		else
 			c->tot->files++;
 
@@ -835,8 +896,8 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	inoset_init(&c.seen);
 
 	struct entry **top = synth_level(&c, ftop, 0);
-	if (o->prune && !o->dirsonly)
-		prune_level(top);
+	if (o->condense || (o->prune && !o->dirsonly))
+		condense_prune_level(top, &c.arena, o, o->prune && !o->dirsonly);
 	if (o->duflag) {
 		off_t dusum = du_aggregate(top);
 		rs.size = dusum; /* tree: root size = aggregate only (not real+sum) */
@@ -957,8 +1018,8 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		if (c.root_err) { /* SR-2.12: root itself over --filelimit */
 			r->tree(ctx, root, root_st, 1, c.root_err, NULL, tot, last_root);
 		} else {
-			if (o->prune && !o->dirsonly)
-				prune_level(top);
+			if (o->condense || (o->prune && !o->dirsonly))
+				condense_prune_level(top, &c.arena, o, o->prune && !o->dirsonly);
 			if (o->duflag) {
 				off_t dusum = du_aggregate(top);
 				if (root_st) {
@@ -976,8 +1037,8 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 			r->root(ctx, root, c.root_err, root_st);
 			tot->dirs++;
 		} else {
-			if (o->prune && !o->dirsonly)
-				prune_level(top);
+			if (o->condense || (o->prune && !o->dirsonly))
+				condense_prune_level(top, &c.arena, o, o->prune && !o->dirsonly);
 			if (o->duflag) {
 				off_t dusum = du_aggregate(top);
 				if (root_st) { /* root total = root's own size + contents */

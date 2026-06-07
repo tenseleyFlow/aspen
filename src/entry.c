@@ -25,6 +25,7 @@ struct entry *entry_new(struct arena *a, const char *name, size_t namelen,
 	e->ltype = ASP_UNKNOWN;
 	e->flags = 0;
 	e->_pad = 0;
+	e->condensed = 0;
 	e->ino = 0;
 	e->dev = 0;
 	e->lmode = 0;
@@ -33,6 +34,7 @@ struct entry *entry_new(struct arena *a, const char *name, size_t namelen,
 	e->child = NULL;
 	e->err = NULL;
 	e->info = NULL;
+	e->condensed_name = NULL;
 	memcpy(e->name, name, namelen);
 	e->name[namelen] = '\0';
 	return e;

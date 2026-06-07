@@ -54,7 +54,7 @@ norm() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /; s/^usage: tree /usage: PROG
 #   (-f was excluded for SR-2.15; re-added now that -J/-X thread the full path.)
 # These are gated elsewhere (golden matrix, usage.sh, outfile.sh).
 FLAGPOOL="-a -d -f -i -l -x -s -h -p -u -g -D -F -Q -N -q -C -n -A -S -t -c -v -U -r \
---du --prune --dirsfirst --filesfirst --noreport --matchdirs \
+--du --prune --dirsfirst --filesfirst --noreport --matchdirs --condense \
 --ignore-case --metafirst -J -X -L1 -L2 -L3"
 
 echo "FUZZ: $N trees x [$locales] (awk: $(awk --version 2>/dev/null | head -1 || echo unknown))"
@@ -137,9 +137,10 @@ while [ "$i" -lt "$N" ]; do
 		# DEVIATION D1 (.docs/deviations.md): under a full-tree mode tree wrongly
 		# exits 0 on an open/filelimit error; aspen correctly exits 2. Output is
 		# identical, only the rc deviates in that exact direction — accept it.
+		# (--condense is a full-tree mode too, so it shares the deviation.)
 		rc_ok=0; [ "$ar" = "$br" ] && rc_ok=1
 		case " $flags " in
-		*\ --du\ *|*\ --prune\ *|*\ --matchdirs\ *)
+		*\ --du\ *|*\ --prune\ *|*\ --matchdirs\ *|*\ --condense\ *)
 			[ "$ar" = 2 ] && [ "$br" = 0 ] && rc_ok=1 ;;
 		esac
 		if [ "$out_ok" != 1 ] || [ "$rc_ok" != 1 ]; then

@@ -247,6 +247,7 @@ static int parse_long(char *a, int *i, int argc, char **argv,
 	if (!strcmp(a, "--prune")) { TOG(prune); return 0; }
 	if (!strcmp(a, "--ignore-case")) { TOG(ignorecase); return 0; }
 	if (!strcmp(a, "--matchdirs")) { TOG(matchdirs); return 0; }
+	if (!strcmp(a, "--condense")) { TOG(condense); return 0; }
 	if (!strcmp(a, "--metafirst")) { TOG(metafirst); return 0; }
 	if (!strcmp(a, "--gitignore")) { TOG(gitignore); return 0; }
 	if (!strcmp(a, "--info")) { TOG(showinfo); return 0; }

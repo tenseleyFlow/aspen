@@ -31,6 +31,8 @@ sh "$here/mklnk.sh" "$lnk" >/dev/null
 sh "$here/mkmeta.sh" "$meta" >/dev/null
 sh "$here/mkvert.sh" "$vert" >/dev/null
 sh "$here/mkprune.sh" "$prn" >/dev/null
+cnd="$work/cnd"
+sh "$here/mkcondense.sh" "$cnd" >/dev/null
 sh "$here/mkgign.sh" "$gign" >/dev/null
 sh "$here/mkinfo.sh" "$inf" >/dev/null
 ff="$work/ff"
@@ -198,6 +200,24 @@ CASES='%C
 --du --prune %P
 --du -L 2 %C
 --matchdirs -P alpha %C
+--condense %D
+--condense -d %D
+--condense --du %D
+--condense -s %D
+--condense -f %D
+--condense -F %D
+--condense --prune %D
+--condense -L 2 %D
+--condense -i %D
+--condense --noreport %D
+--condense -l %D
+--condense -P *.txt %D
+-J --condense %D
+-X --condense %D
+-J --condense -l %D
+-X --condense --du %D
+-J --condense -f %D
+-l %D
 --gitignore %G
 --gitignore -a %G
 --gitignore -F %G
@@ -314,7 +334,7 @@ normdev() { sed 's/%FFFFFF\([0-9A-Fa-f][0-9A-Fa-f]\)/%\1/g; s/,"contents":\[ *\]
 
 run_case() { # <bin> <case-string>
 	_bin=$1
-	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g; s#%G#$gign#g; s#%I#$inf#g; s#%h#$work/hintro#g; s#%o#$work/houtro#g; s#%F#$ff#g; s#%E#$dep#g; s#%R#$rts#g; s#%O#$work/ofile#g")
+	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g; s#%G#$gign#g; s#%I#$inf#g; s#%h#$work/hintro#g; s#%o#$work/houtro#g; s#%F#$ff#g; s#%E#$dep#g; s#%R#$rts#g; s#%D#$cnd#g; s#%O#$work/ofile#g")
 	_oi=$IFS
 	IFS=' 	'
 	set -f # no globbing: pattern args like *.txt must reach the binary verbatim

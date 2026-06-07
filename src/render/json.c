@@ -148,17 +148,20 @@ static void jemit_level(struct json_ctx *j, struct entry **arr, int depth, struc
 		int last = (arr[i + 1] == NULL);
 		int dir_like = e->type == ASP_DIR || (e->type == ASP_LNK && e->ltype == ASP_DIR);
 		if (dir_like)
-			tot->dirs++;
+			tot->dirs += 1 + e->condensed; /* --condense: absorbed dirs count too */
 		else
 			tot->files++;
 
-		/* -f: name is the full path. j->fp is a path stack seeded with the root
-		 * in json_tree; push "/name" before emitting, pop after the subtree. */
+		/* --condense: emit the collapsed "a/b/c" in place of the name (and on the
+		 * -f path stack). -f: name is the full path. j->fp is a path stack seeded
+		 * with the root in json_tree; push "/name" before emitting, pop after. */
+		const char *dname = e->condensed_name ? e->condensed_name : e->name;
+		size_t dnamelen = e->condensed_name ? strlen(e->condensed_name) : e->namelen;
 		size_t fp_saved = j->fp.len;
-		const char *name = e->name;
+		const char *name = dname;
 		if (j->o->fullpath) {
 			dstr_appendc(&j->fp, '/');
-			dstr_append(&j->fp, e->name, e->namelen);
+			dstr_append(&j->fp, dname, dnamelen);
 			name = j->fp.data;
 		}
 

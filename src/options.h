@@ -44,6 +44,7 @@ struct options {
 	int prune, showinfo; const char *infofile;
 	long filelimit;
 	int metafirst;
+	int condense; /* --condense: collapse singleton dir chains onto one line */
 
 	/* sorting (Sprint 05) */
 	int reverse, dirsfirst, filesfirst;
