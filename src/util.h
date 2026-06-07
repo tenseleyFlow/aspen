@@ -3,9 +3,13 @@
 
 #include <stddef.h>
 
-/* Allocation that aborts on failure (CLI policy: OOM is fatal). */
+/* Allocation that aborts on failure (CLI policy: OOM is fatal — tree's exact
+ * "virtual memory exhausted." diagnostic and exit(1), program name aside). */
 void *asp_xmalloc(size_t n);
 void *asp_xrealloc(void *p, size_t n);
+
+/* strdup via asp_xmalloc (so OOM is handled uniformly). */
+char *asp_strdup(const char *s);
 
 /* Saturating size arithmetic — clamp to SIZE_MAX on overflow instead of wrapping. */
 size_t asp_size_add(size_t a, size_t b);

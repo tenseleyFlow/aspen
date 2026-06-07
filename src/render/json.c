@@ -82,20 +82,6 @@ static void jindent(struct json_ctx *j, int level)
 		dstr_appendz(&j->out, "    ");
 }
 
-static const char *ftype_str(enum asp_type t)
-{
-	switch (t) {
-	case ASP_DIR:  return "directory";
-	case ASP_REG:  return "file";
-	case ASP_LNK:  return "link";
-	case ASP_CHR:  return "char";
-	case ASP_BLK:  return "block";
-	case ASP_SOCK: return "socket";
-	case ASP_FIFO: return "fifo";
-	default:       return "unknown";
-	}
-}
-
 static void jfillinfo(struct json_ctx *j, const struct asp_statinfo *st)
 {
 	const struct options *o = j->o;
@@ -148,7 +134,7 @@ static void jhead(struct json_ctx *j, enum asp_type type, const char *name,
 		  const struct entry *e, const struct asp_statinfo *st)
 {
 	dstr_appendz(&j->out, "{\"type\":\"");
-	dstr_appendz(&j->out, ftype_str(type));
+	dstr_appendz(&j->out, asp_type_name(type));
 	dstr_appendz(&j->out, "\",\"name\":\"");
 	jenc(&j->out, name);
 	dstr_appendc(&j->out, '"');
@@ -266,7 +252,7 @@ static void json_tree(void *ctx, const char *rootpath, const struct asp_statinfo
 
 	jindent(j, 0);
 	if (!opened) { /* failed root: type from lstat (file/...) else "unknown", error in contents */
-		const char *ft = st ? ftype_str(asp_type_from_mode(st->mode)) : "unknown";
+		const char *ft = st ? asp_type_name(asp_type_from_mode(st->mode)) : "unknown";
 		dstr_appendz(&j->out, "{\"type\":\"");
 		dstr_appendz(&j->out, ft);
 		dstr_appendz(&j->out, "\",\"name\":\"");
@@ -291,7 +277,7 @@ static void json_tree(void *ctx, const char *rootpath, const struct asp_statinfo
 	 * the path-list file itself (e.g. "file"). tree leaves the root's inode/dev
 	 * at 0 even under --inodes/--device, so zero them on a copy here. */
 	const char *rtype = (st && !S_ISDIR(st->mode))
-				    ? ftype_str(asp_type_from_mode(st->mode))
+				    ? asp_type_name(asp_type_from_mode(st->mode))
 				    : "directory";
 	struct asp_statinfo rstz;
 	if (st) {

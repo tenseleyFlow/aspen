@@ -18,13 +18,6 @@ static size_t un, ucap;
 static struct identry *gcache;
 static size_t gn, gcap;
 
-static char *dup_str(const char *s)
-{
-	size_t n = strlen(s) + 1;
-	char *d = asp_xmalloc(n);
-	memcpy(d, s, n);
-	return d;
-}
 
 static const char *lookup(struct identry **arr, size_t *n, size_t *cap,
 			  unsigned long id, int is_uid)
@@ -36,15 +29,15 @@ static const char *lookup(struct identry **arr, size_t *n, size_t *cap,
 	char *name;
 	if (is_uid) {
 		struct passwd *p = getpwuid((uid_t)id);
-		name = p ? dup_str(p->pw_name) : NULL;
+		name = p ? asp_strdup(p->pw_name) : NULL;
 	} else {
 		struct group *g = getgrgid((gid_t)id);
-		name = g ? dup_str(g->gr_name) : NULL;
+		name = g ? asp_strdup(g->gr_name) : NULL;
 	}
 	if (!name) {
 		char buf[32];
 		snprintf(buf, sizeof buf, "%d", (int)id); /* matches tree's %d */
-		name = dup_str(buf);
+		name = asp_strdup(buf);
 	}
 
 	if (*n == *cap) {

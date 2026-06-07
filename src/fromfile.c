@@ -14,19 +14,12 @@
 
 enum ftok { T_PATHSEP, T_DIR, T_FILE, T_EOP };
 
-static char *xdup(const char *s)
-{
-	size_t n = strlen(s) + 1;
-	char *p = asp_xmalloc(n);
-	memcpy(p, s, n);
-	return p;
-}
 
 static struct fnode *newnode(const char *name)
 {
 	struct fnode *n = asp_xmalloc(sizeof *n);
 	n->child = n->next = NULL;
-	n->name = xdup(name);
+	n->name = asp_strdup(name);
 	n->lnk = NULL;
 	n->isdir = 0;
 	n->islink = 0;
@@ -138,7 +131,7 @@ static struct fnode *read_paths(FILE *fp, const struct options *o, char *buf)
 			ent->isdir = 0;
 			ent->islink = 1;
 			free(ent->lnk);
-			ent->lnk = xdup(link);
+			ent->lnk = asp_strdup(link);
 		}
 	}
 	return top;
@@ -192,7 +185,7 @@ static struct fnode *read_tabs(FILE *fp, const struct options *o, char *buf)
 			ent->isdir = 0;
 			ent->islink = 1;
 			free(ent->lnk);
-			ent->lnk = xdup(link);
+			ent->lnk = asp_strdup(link);
 		}
 		top_depth = tabs;
 	}

@@ -60,20 +60,6 @@ static void xindent(struct xml_ctx *x, int level)
 		dstr_appendz(&x->out, "    ");
 }
 
-static const char *tag_str(enum asp_type t)
-{
-	switch (t) {
-	case ASP_DIR:  return "directory";
-	case ASP_REG:  return "file";
-	case ASP_LNK:  return "link";
-	case ASP_CHR:  return "char";
-	case ASP_BLK:  return "block";
-	case ASP_SOCK: return "socket";
-	case ASP_FIFO: return "fifo";
-	default:       return "unknown";
-	}
-}
-
 static void xfillinfo(struct xml_ctx *x, const struct asp_statinfo *st)
 {
 	const struct options *o = x->o;
@@ -118,7 +104,7 @@ static void xhead(struct xml_ctx *x, enum asp_type type, const char *name,
 		  const struct entry *e, const struct asp_statinfo *st)
 {
 	dstr_appendc(&x->out, '<');
-	dstr_appendz(&x->out, tag_str(type));
+	dstr_appendz(&x->out, asp_type_name(type));
 	dstr_appendz(&x->out, " name=\"");
 	asp_html_encode(&x->out, name);
 	dstr_appendc(&x->out, '"');
@@ -155,7 +141,7 @@ static void xemit_level(struct xml_ctx *x, struct entry **arr, int depth, struct
 		else
 			tot->files++;
 
-		const char *tag = tag_str(e->type);
+		const char *tag = asp_type_name(e->type);
 		int has_kids = e->child && e->child[0];
 		int direrr = dir_like && e->err && !has_kids;
 
@@ -249,7 +235,7 @@ static void xml_tree(void *ctx, const char *rootpath, const struct asp_statinfo 
 
 	xindent(x, 0);
 	if (!opened) { /* failed root: tag from lstat (file/...) else "unknown" */
-		const char *ftag = st ? tag_str(asp_type_from_mode(st->mode)) : "unknown";
+		const char *ftag = st ? asp_type_name(asp_type_from_mode(st->mode)) : "unknown";
 		dstr_appendc(&x->out, '<');
 		dstr_appendz(&x->out, ftag);
 		dstr_appendz(&x->out, " name=\"");
@@ -274,7 +260,7 @@ static void xml_tree(void *ctx, const char *rootpath, const struct asp_statinfo 
 	/* --fromfile roots take the path-list file's own type. tree leaves the root's
 	 * inode/dev at 0 even under --inodes/--device, so zero them on a copy. */
 	const char *rtag = (st && !S_ISDIR(st->mode))
-				   ? tag_str(asp_type_from_mode(st->mode))
+				   ? asp_type_name(asp_type_from_mode(st->mode))
 				   : "directory";
 	struct asp_statinfo rstz;
 	if (st) {

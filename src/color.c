@@ -68,8 +68,7 @@ static void parse(struct colorizer *c, const char *src)
 	c->code = asp_xmalloc(NCOL * sizeof *c->code);
 	for (int i = 0; i < NCOL; i++)
 		c->code[i] = NULL;
-	c->buf = asp_xmalloc(strlen(src) + 1);
-	memcpy(c->buf, src, strlen(src) + 1);
+	c->buf = asp_strdup(src);
 
 	for (char *tok = strtok(c->buf, ":"); tok; tok = strtok(NULL, ":")) {
 		char *eq = strchr(tok, '=');

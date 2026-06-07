@@ -43,4 +43,8 @@ struct entry {
 struct entry *entry_new(struct arena *a, const char *name, size_t namelen,
 			enum asp_type type);
 
+/* tree's long type name ("directory"/"file"/"link"/...), used by the JSON and
+ * XML renderers (shared so json's ftype_str and xml's tag_str can't drift). */
+const char *asp_type_name(enum asp_type t);
+
 #endif /* ASP_ENTRY_H */

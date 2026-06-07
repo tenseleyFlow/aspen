@@ -2,6 +2,20 @@
 
 #include <string.h>
 
+const char *asp_type_name(enum asp_type t)
+{
+	switch (t) {
+	case ASP_DIR:  return "directory";
+	case ASP_REG:  return "file";
+	case ASP_LNK:  return "link";
+	case ASP_CHR:  return "char";
+	case ASP_BLK:  return "block";
+	case ASP_SOCK: return "socket";
+	case ASP_FIFO: return "fifo";
+	default:       return "unknown";
+	}
+}
+
 struct entry *entry_new(struct arena *a, const char *name, size_t namelen,
 			enum asp_type type)
 {

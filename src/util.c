@@ -2,25 +2,37 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+/* tree's exact OOM diagnostic + exit code (program name aside). */
+static void oom(void)
+{
+	fputs("aspen: virtual memory exhausted.\n", stderr);
+	exit(1);
+}
 
 void *asp_xmalloc(size_t n)
 {
 	void *p = malloc(n ? n : 1);
-	if (!p) {
-		fputs("aspen: out of memory\n", stderr);
-		exit(2);
-	}
+	if (!p)
+		oom();
 	return p;
 }
 
 void *asp_xrealloc(void *p, size_t n)
 {
 	void *q = realloc(p, n ? n : 1);
-	if (!q) {
-		fputs("aspen: out of memory\n", stderr);
-		exit(2);
-	}
+	if (!q)
+		oom();
 	return q;
+}
+
+char *asp_strdup(const char *s)
+{
+	size_t n = strlen(s) + 1;
+	char *d = asp_xmalloc(n);
+	memcpy(d, s, n);
+	return d;
 }
 
 size_t asp_size_add(size_t a, size_t b)

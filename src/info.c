@@ -8,13 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static char *dup_line(const char *s)
-{
-	size_t n = strlen(s) + 1;
-	char *d = asp_xmalloc(n);
-	memcpy(d, s, n);
-	return d;
-}
 
 static struct icomment *new_comment(struct gpattern *phead, char **line, int lines)
 {
@@ -45,7 +38,7 @@ static struct infofile *parse(const char *basepath, FILE *fp)
 
 		if (buf[0] == '\t') {
 			if (lines < PATH_MAX)
-				line[lines++] = dup_line(buf + 1);
+				line[lines++] = asp_strdup(buf + 1);
 		} else {
 			if (lines) {
 				if (phead) {
