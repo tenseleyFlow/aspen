@@ -11,8 +11,6 @@
 
 #include <stddef.h>
 
-enum { STAT_TYPE = 1u << 0, STAT_DEV = 1u << 1, STAT_META = 1u << 2 };
-
 enum sort_kind {
 	SORT_NAME = 0,
 	SORT_VERSION,
@@ -26,7 +24,9 @@ enum out_format { OUT_UNIX = 0, OUT_XML, OUT_JSON, OUT_HTML };
 
 struct options {
 	/* listing (Sprint 03) */
-	int all, dirsonly, fullpath, noindent, xdev, follow, rerun, classify;
+	int all, dirsonly, fullpath, noindent, xdev, follow, classify;
+	int rerun; /* -R: parsed and accepted; the HTML 00Tree.html rerun action is
+		    * a deferred feature (tree's -R is inert without -L anyway). */
 	long level; /* -L; -1 = unlimited */
 
 	/* file info (Sprint 04) */
@@ -67,8 +67,10 @@ struct options {
 	 * byte-identical regardless — only stat() is parallelized. */
 	int threads;
 
-	/* derived (set after parse / color_init) */
-	unsigned stat_mask;
+	/* derived (set after parse / color_init). The per-entry stat decision is NOT
+	 * a precomputed mask — it is computed per context by meta_wanted() /
+	 * sort_needs_stat() / nonlink_needs_stat() in traverse.c, which already fold
+	 * in d_type and -l follow. */
 	int colorize; /* whether colorization is active (forces stat for mode) */
 };
 
