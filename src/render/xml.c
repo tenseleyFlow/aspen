@@ -19,11 +19,13 @@ void xml_ctx_init(struct xml_ctx *x, int fd, const struct options *o)
 	dstr_init(&x->out);
 	x->fd = fd;
 	x->o = o;
+	dstr_init(&x->fp);
 }
 
 void xml_ctx_destroy(struct xml_ctx *x)
 {
 	dstr_free(&x->out);
+	dstr_free(&x->fp);
 }
 
 static const char *xnl(struct xml_ctx *x)
@@ -145,8 +147,17 @@ static void xemit_level(struct xml_ctx *x, struct entry **arr, int depth, struct
 		int has_kids = e->child && e->child[0];
 		int direrr = dir_like && e->err && !has_kids;
 
+		/* -f: name is the full path (path stack seeded with the root in xml_tree). */
+		size_t fp_saved = x->fp.len;
+		const char *name = e->name;
+		if (x->o->fullpath) {
+			dstr_appendc(&x->fp, '/');
+			dstr_append(&x->fp, e->name, e->namelen);
+			name = x->fp.data;
+		}
+
 		xindent(x, depth);
-		xhead(x, e->type, e->name, e, e->st);
+		xhead(x, e->type, name, e, e->st);
 
 		if (has_kids) {
 			dstr_appendz(&x->out, xnl(x));
@@ -167,6 +178,10 @@ static void xemit_level(struct xml_ctx *x, struct entry **arr, int depth, struct
 			dstr_appendz(&x->out, tag);
 			dstr_appendc(&x->out, '>');
 			dstr_appendz(&x->out, xnl(x));
+		}
+		if (x->o->fullpath) { /* pop this entry off the path stack */
+			x->fp.len = fp_saved;
+			x->fp.data[fp_saved] = '\0';
 		}
 		xmaybe(x);
 	}
@@ -278,6 +293,10 @@ static void xml_tree(void *ctx, const char *rootpath, const struct asp_statinfo 
 	dstr_appendz(&x->out, xnl(x));
 	if (top[0]) /* tree counts the root as a directory only when non-empty */
 		tot->dirs++;
+	if (x->o->fullpath) { /* seed the -f path stack with the root */
+		dstr_clear(&x->fp);
+		dstr_appendz(&x->fp, rootpath);
+	}
 
 	xemit_level(x, top, 1, tot);
 

@@ -11,6 +11,7 @@ struct xml_ctx {
 	struct dstr out;
 	int fd;
 	const struct options *o;
+	struct dstr fp; /* -f only: path stack (root + "/name" per level) for full names */
 };
 
 void xml_ctx_init(struct xml_ctx *x, int fd, const struct options *o);

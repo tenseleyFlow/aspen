@@ -12,6 +12,7 @@ struct json_ctx {
 	struct dstr out;
 	int fd;
 	const struct options *o;
+	struct dstr fp; /* -f only: path stack (root + "/name" per level) for full names */
 };
 
 void json_ctx_init(struct json_ctx *j, int fd, const struct options *o);

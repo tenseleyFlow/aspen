@@ -17,11 +17,13 @@ void json_ctx_init(struct json_ctx *j, int fd, const struct options *o)
 	dstr_init(&j->out);
 	j->fd = fd;
 	j->o = o;
+	dstr_init(&j->fp);
 }
 
 void json_ctx_destroy(struct json_ctx *j)
 {
 	dstr_free(&j->out);
+	dstr_free(&j->fp);
 }
 
 static const char *jnl(struct json_ctx *j)
@@ -170,8 +172,18 @@ static void jemit_level(struct json_ctx *j, struct entry **arr, int depth, struc
 		else
 			tot->files++;
 
+		/* -f: name is the full path. j->fp is a path stack seeded with the root
+		 * in json_tree; push "/name" before emitting, pop after the subtree. */
+		size_t fp_saved = j->fp.len;
+		const char *name = e->name;
+		if (j->o->fullpath) {
+			dstr_appendc(&j->fp, '/');
+			dstr_append(&j->fp, e->name, e->namelen);
+			name = j->fp.data;
+		}
+
 		jindent(j, depth);
-		jhead(j, e->type, e->name, e, e->st);
+		jhead(j, e->type, name, e, e->st);
 
 		/* tree emits "contents" only for a NON-empty descended dir (an empty
 		 * dir reads as no children -> no contents key) or an unreadable dir. */
@@ -203,6 +215,10 @@ static void jemit_level(struct json_ctx *j, struct entry **arr, int depth, struc
 			dstr_appendc(&j->out, '}');
 			dstr_appendz(&j->out, last ? "" : ",");
 			dstr_appendz(&j->out, jnl(j));
+		}
+		if (j->o->fullpath) { /* pop this entry off the path stack */
+			j->fp.len = fp_saved;
+			j->fp.data[fp_saved] = '\0';
 		}
 		jmaybe(j);
 	}
@@ -296,6 +312,10 @@ static void json_tree(void *ctx, const char *rootpath, const struct asp_statinfo
 	 * at least one child; an empty root is just {type,name} and counts 0. */
 	if (top && top[0]) {
 		tot->dirs++;
+		if (j->o->fullpath) { /* seed the -f path stack with the root */
+			dstr_clear(&j->fp);
+			dstr_appendz(&j->fp, rootpath);
+		}
 		dstr_appendz(&j->out, ",\"contents\":[");
 		dstr_appendz(&j->out, jnl(j));
 		jemit_level(j, top, 1, tot);

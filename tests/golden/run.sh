@@ -105,6 +105,10 @@ CASES='%C
 -H . --hintro=%h --houtro=%o -F %R/afifo
 -J --inodes %M
 -X --device %M
+-J -f %C
+-X -f %C
+-J -f %L
+-X -f %M
 -o %O %M
 -o %O -J %M
 -o %O -H . --hintro=%h --houtro=%o %M

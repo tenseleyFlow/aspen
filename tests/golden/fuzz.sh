@@ -50,11 +50,10 @@ norm() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /; s/^usage: tree /usage: PROG
 #     child filelimit path is already golden-covered and correct),
 #   --inodes/--device (SR-2.14: -J/-X emit LINK ino/dev where tree emits the
 #     TARGET's; random trees have symlinks, so re-add once 2.14 lands — unix-mode
-#     ino/dev is correct and golden-covered),
-#   -f (SR-2.15: aspen doesn't thread the full path into -J/-X name; re-add once
-#     fixed — unix/html -f is correct and golden-covered).
+#     ino/dev is correct and golden-covered).
+#   (-f was excluded for SR-2.15; re-added now that -J/-X thread the full path.)
 # These are gated elsewhere (golden matrix, usage.sh, outfile.sh).
-FLAGPOOL="-a -d -i -l -x -s -h -p -u -g -D -F -Q -N -q -C -n -A -S -t -c -v -U -r \
+FLAGPOOL="-a -d -f -i -l -x -s -h -p -u -g -D -F -Q -N -q -C -n -A -S -t -c -v -U -r \
 --du --prune --dirsfirst --filesfirst --noreport --matchdirs \
 --ignore-case --metafirst -J -X -L1 -L2 -L3"
 
