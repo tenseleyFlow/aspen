@@ -19,3 +19,9 @@ mkdir -p "$d/pd/trueempty"
 : > "$d/pd/rootfile"
 
 mkdir -p "$d/noread"; chmod 000 "$d/noread"      # unreadable directory as root (rc 0, 1 file)
+
+# --filelimit: big exceeds, small does not; a file after big exercises tree's
+# JSON "flag.J && errors" quirk (later entries get a spurious empty contents).
+mkdir -p "$d/fl/big" "$d/fl/small"
+i=0; while [ "$i" -lt 5 ]; do : > "$d/fl/big/f$i"; i=$((i + 1)); done
+: > "$d/fl/small/a"

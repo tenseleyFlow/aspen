@@ -86,6 +86,13 @@ CASES='%C
 -o %O %M
 -o %O -J %M
 -o %O -H . --hintro=%h --houtro=%o %M
+--filelimit 3 %R/fl
+--filelimit 3 -J %R/fl
+--filelimit 3 -X %R/fl
+--filelimit 3 -H . --hintro=%h --houtro=%o %R/fl
+--filelimit 3 -d %R/fl
+--filelimit 3 --du %R/fl
+--filelimit 10 %R/fl
 -a %W
 -F %W
 %L

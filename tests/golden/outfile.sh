@@ -35,7 +35,9 @@ chk "-X"      -X
 "$ASP" -o /no/such/dir/x "$meta" 2>"$work/of.err"; arc=$?
 "$ref" -n -o /no/such/dir/x "$meta" 2>"$work/of.referr";
 if [ "$arc" != 1 ]; then echo "OUTFILE: open-failure rc=$arc (expected 1)"; fail=1; fi
-if ! diff <(sed 's/^aspen:/PROG:/' "$work/of.err") <(sed 's/^tree:/PROG:/' "$work/of.referr") >/dev/null 2>&1; then
+sed 's/^aspen:/PROG:/' "$work/of.err" > "$work/of.errn"
+sed 's/^tree:/PROG:/' "$work/of.referr" > "$work/of.referrn"
+if ! diff -q "$work/of.errn" "$work/of.referrn" >/dev/null 2>&1; then
 	echo "OUTFILE: open-failure message differs"; fail=1
 fi
 

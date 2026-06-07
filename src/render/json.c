@@ -17,6 +17,7 @@ void json_ctx_init(struct json_ctx *j, int fd, const struct options *o)
 	dstr_init(&j->out);
 	j->fd = fd;
 	j->o = o;
+	j->seen_err = 0;
 }
 
 void json_ctx_destroy(struct json_ctx *j)
@@ -191,19 +192,32 @@ static void jemit_level(struct json_ctx *j, struct entry **arr, int depth, struc
 		 * dir reads as no children -> no contents key) or an unreadable dir. */
 		int has_kids = e->child && e->child[0];
 		int direrr = dir_like && e->err && !has_kids;
-		if (has_kids || direrr) {
+		if (has_kids) {
 			dstr_appendz(&j->out, ",\"contents\":[");
 			dstr_appendz(&j->out, jnl(j));
-			if (e->child) {
-				jemit_level(j, e->child, depth + 1, tot);
-			} else { /* unreadable dir: an error object inside contents */
-				jindent(j, depth + 1);
-				dstr_appendz(&j->out, "{\"error\": \"");
-				dstr_appendz(&j->out, e->err);
-				dstr_appendz(&j->out, "\"}");
-				dstr_appendz(&j->out, jnl(j));
-			}
+			jemit_level(j, e->child, depth + 1, tot);
 			jindent(j, depth);
+			dstr_appendz(&j->out, "]}");
+			dstr_appendz(&j->out, last ? "" : ",");
+			dstr_appendz(&j->out, jnl(j));
+		} else if (direrr) {
+			/* unreadable / filelimit dir: tree emits the error inline and closes
+			 * with json_indent(-1) == 4 spaces (no newline) — list.c close(lev=-1). */
+			dstr_appendz(&j->out, ",\"contents\":[{\"error\": \"");
+			dstr_appendz(&j->out, e->err);
+			dstr_appendz(&j->out, "\"}");
+			if (!j->o->noindent)
+				dstr_appendz(&j->out, "    ");
+			dstr_appendz(&j->out, "]}");
+			dstr_appendz(&j->out, last ? "" : ",");
+			dstr_appendz(&j->out, jnl(j));
+			j->seen_err = 1;
+		} else if (j->seen_err) {
+			/* tree faithful-bug: after any error, -J gives every later entry an
+			 * empty "contents":[    ] (descend bumped by flag.J && errors). */
+			dstr_appendz(&j->out, ",\"contents\":[");
+			if (!j->o->noindent)
+				dstr_appendz(&j->out, "    ");
 			dstr_appendz(&j->out, "]}");
 			dstr_appendz(&j->out, last ? "" : ",");
 			dstr_appendz(&j->out, jnl(j));

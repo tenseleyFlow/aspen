@@ -142,7 +142,7 @@ static void fill_link(struct wctx *c, int dirfd, struct entry *e)
 /* Modes that need the whole tree built before emitting. (--fromfile: Sprint 10) */
 static int needfulltree(const struct options *o)
 {
-	return o->duflag || o->prune || o->matchdirs;
+	return o->duflag || o->prune || o->matchdirs || o->filelimit > 0;
 }
 
 /* Read one directory's entries into ev (entries from the arena). suppress_pat
@@ -440,7 +440,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 /* Build the full subtree of an open directory into arena entries (->child set
  * for descended dirs). du aggregation happens later (post-prune). */
 static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
-				  int suppress_pat)
+				  int suppress_pat, struct entry *owner)
 {
 	const struct options *o = c->o;
 	struct evec ev = { NULL, 0, 0 };
@@ -450,6 +450,25 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 	struct infofile *inf = push_dir_info(c);
 
 	read_level(c, d, &ev, suppress_pat);
+
+	/* --filelimit: a directory with more than N listable entries is not opened;
+	 * it shows the marker (via owner->err, rendered like an error node) and its
+	 * contents are skipped. Root-as-the-over-limit-arg is handled in SR-1. */
+	if (o->filelimit > 0 && owner && ev.n > (size_t)o->filelimit) {
+		char m[80];
+		snprintf(m, sizeof m, "%zu entries exceeds filelimit, not opening dir", ev.n);
+		owner->err = arena_strdup(&c->arena, m);
+		/* tree counts filelimit as an error (rc 2) only on its streaming path;
+		 * with --du/--prune/--matchdirs (full-tree) it shows the marker but rc 0. */
+		if (!(o->duflag || o->prune || o->matchdirs))
+			(*c->errors)++;
+		if (inf)
+			infostack_pop(&c->istack);
+		if (ig)
+			gitstack_pop(&c->fstack);
+		free(ev.v);
+		return NULL; /* no children: emit_level shows owner->err */
+	}
 
 	for (size_t i = 0; i < ev.n; i++) {
 		struct entry *e = ev.v[i];
@@ -486,7 +505,7 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 				/* track path for child .gitignore + filtercheck */
 				dstr_appendc(&c->path, '/');
 				dstr_append(&c->path, e->name, e->namelen);
-				e->child = build_level(c, cd, depth + 1, child_suppress);
+				e->child = build_level(c, cd, depth + 1, child_suppress, e);
 				c->path.len = pathlen;
 				c->path.data[pathlen] = '\0';
 				asp_dirclose(cd);
@@ -839,7 +858,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	if (r->tree) {
 		/* Nested formats (JSON/XML/HTML): build the whole tree, hand it off.
 		 * The renderer counts entries and emits; we just compute the du total. */
-		struct entry **top = build_level(&c, d, 1, 0);
+		struct entry **top = build_level(&c, d, 1, 0, NULL);
 		if (o->prune && !o->dirsonly)
 			prune_level(top);
 		if (o->duflag) {
@@ -853,7 +872,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		}
 		r->tree(ctx, root, root_st, 1, top, tot, last_root);
 	} else if (needfulltree(o)) {
-		struct entry **top = build_level(&c, d, 1, 0);
+		struct entry **top = build_level(&c, d, 1, 0, NULL);
 		if (o->prune && !o->dirsonly)
 			prune_level(top);
 		if (o->duflag) {

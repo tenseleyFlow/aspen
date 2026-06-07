@@ -12,6 +12,8 @@ struct json_ctx {
 	struct dstr out;
 	int fd;
 	const struct options *o;
+	int seen_err; /* tree quirk: once any error occurs, -J gives every later
+		       * entry a spurious empty "contents":[    ] (flag.J && errors) */
 };
 
 void json_ctx_init(struct json_ctx *j, int fd, const struct options *o);
