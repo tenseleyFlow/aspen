@@ -205,6 +205,7 @@ CASES='%C
 -H . --hintro=%h --houtro=%o %L
 -H . --hintro=%h --houtro=%o --info %I
 -H . --hintro=%h --houtro=%o -C %C
+-H . --hintro=%h --houtro=%o -C %M
 -H http://x/y --hintro=%h --houtro=%o %M
 -H -base --hintro=%h --houtro=%o %M
 -H . --hintro=%h --houtro=%o -d %C

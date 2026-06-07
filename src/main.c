@@ -115,6 +115,9 @@ int main(int argc, char **argv)
 		rc = render_tree(roots, &o, &asp_xml_renderer, &x, NULL);
 		xml_ctx_destroy(&x);
 	} else if (o.format == OUT_HTML) {
+		/* -C in HTML emits a per-entry class (incl. EXEC), which needs the exec
+		 * bit; flag colorize so the traversal stats entries (tree always does). */
+		o.colorize = o.forcecolor;
 		struct html_ctx hc;
 		html_ctx_init(&hc, STDOUT_FILENO, mb, &o);
 		rc = render_tree(roots, &o, &asp_html_renderer, &hc, NULL);

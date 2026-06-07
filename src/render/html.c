@@ -184,33 +184,38 @@ static void html_begin(void *ctx)
 		return;
 	}
 	const char *title = o->title ? o->title : "Directory Tree";
-	char b[1024];
-	int n = snprintf(b, sizeof b,
-		"<!DOCTYPE html>\n<html>\n<head>\n"
-		" <meta http-equiv=\"Content-Type\" content=\"text/html; charset=%s\">\n"
-		" <meta name=\"Author\" content=\"Made by 'aspen'\">\n"
-		" <meta name=\"GENERATOR\" content=\"%s v%s\">\n"
-		" <title>%s</title>\n"
-		" <style type=\"text/css\">\n"
-		"  BODY { font-family : monospace, sans-serif;  color: black;}\n"
-		"  P { font-family : monospace, sans-serif; color: black; margin:0px; padding: 0px;}\n"
-		"  A:visited { text-decoration : none; margin : 0px; padding : 0px;}\n"
-		"  A:link    { text-decoration : none; margin : 0px; padding : 0px;}\n"
-		"  A:hover   { text-decoration: underline; background-color : yellow; margin : 0px; padding : 0px;}\n"
-		"  A:active  { margin : 0px; padding : 0px;}\n"
-		"  .VERSION { font-size: small; font-family : arial, sans-serif; }\n"
-		"  .NORM  { color: black;  }\n"
-		"  .FIFO  { color: purple; }\n"
-		"  .CHAR  { color: yellow; }\n"
-		"  .DIR   { color: blue;   }\n"
-		"  .BLOCK { color: yellow; }\n"
-		"  .LINK  { color: aqua;   }\n"
-		"  .SOCK  { color: fuchsia;}\n"
-		"  .EXEC  { color: green;  }\n"
-		" </style>\n</head>\n<body>\n\t<h1>%s</h1><p>\n",
-		h->charset ? h->charset : "iso-8859-1", ASP_PROGNAME, ASP_VERSION, title, title);
-	if (n > 0)
-		dstr_append(&h->out, b, (size_t)n > sizeof b - 1 ? sizeof b - 1 : (size_t)n);
+	/* Build straight into the output buffer — a fixed stack buffer (the old
+	 * char[1024]) silently truncated the document when -T title or the charset
+	 * was long. Variable parts are appended separately; the rest is one literal. */
+	struct dstr *d = &h->out;
+	dstr_appendz(d, "<!DOCTYPE html>\n<html>\n<head>\n"
+			" <meta http-equiv=\"Content-Type\" content=\"text/html; charset=");
+	dstr_appendz(d, h->charset ? h->charset : "iso-8859-1");
+	dstr_appendz(d, "\">\n"
+			" <meta name=\"Author\" content=\"Made by '" ASP_PROGNAME "'\">\n"
+			" <meta name=\"GENERATOR\" content=\"" ASP_PROGNAME " v" ASP_VERSION "\">\n"
+			" <title>");
+	dstr_appendz(d, title);
+	dstr_appendz(d, "</title>\n"
+			" <style type=\"text/css\">\n"
+			"  BODY { font-family : monospace, sans-serif;  color: black;}\n"
+			"  P { font-family : monospace, sans-serif; color: black; margin:0px; padding: 0px;}\n"
+			"  A:visited { text-decoration : none; margin : 0px; padding : 0px;}\n"
+			"  A:link    { text-decoration : none; margin : 0px; padding : 0px;}\n"
+			"  A:hover   { text-decoration: underline; background-color : yellow; margin : 0px; padding : 0px;}\n"
+			"  A:active  { margin : 0px; padding : 0px;}\n"
+			"  .VERSION { font-size: small; font-family : arial, sans-serif; }\n"
+			"  .NORM  { color: black;  }\n"
+			"  .FIFO  { color: purple; }\n"
+			"  .CHAR  { color: yellow; }\n"
+			"  .DIR   { color: blue;   }\n"
+			"  .BLOCK { color: yellow; }\n"
+			"  .LINK  { color: aqua;   }\n"
+			"  .SOCK  { color: fuchsia;}\n"
+			"  .EXEC  { color: green;  }\n"
+			" </style>\n</head>\n<body>\n\t<h1>");
+	dstr_appendz(d, title);
+	dstr_appendz(d, "</h1><p>\n");
 }
 
 static void html_end(void *ctx)
