@@ -27,6 +27,11 @@
 #define ASP_INFO_PATH "/usr/share/finfo/global_info" /* tree's default --info file */
 #endif
 
+struct evec {
+	struct entry **v;
+	size_t n, cap;
+};
+
 struct wctx {
 	struct arena arena;
 	struct dstr path;
@@ -42,6 +47,15 @@ struct wctx {
 	dev_t root_dev;
 	struct asp_pool *pool;     /* metadata-stat workers (NULL = serial) */
 	struct asp_ring *ring;     /* io_uring statx backend (NULL = use pool) */
+
+	/* Reusable scratch — kept across the whole walk so a level pays no per-dir
+	 * malloc (the "arena, no malloc churn" budget). One entry-vector per active
+	 * depth (a depth's vector is live for exactly one dir at a time, since
+	 * siblings are sequential and recursion uses depth+1); one deferred-stat
+	 * vector (consumed within read_level, which never recurses). */
+	struct evec *epool;
+	size_t epoolcap;
+	struct evec defer;
 };
 
 /* Threshold below which a level's deferred stats run inline — small levels
@@ -71,11 +85,6 @@ static struct infofile *push_dir_info(struct wctx *c)
 	return inf;
 }
 
-struct evec {
-	struct entry **v;
-	size_t n, cap;
-};
-
 static void evec_push(struct evec *ev, struct entry *e)
 {
 	if (ev->n == ev->cap) {
@@ -83,6 +92,39 @@ static void evec_push(struct evec *ev, struct entry *e)
 		ev->v = asp_xrealloc(ev->v, ev->cap * sizeof *ev->v);
 	}
 	ev->v[ev->n++] = e;
+}
+
+/* A cleared, reusable entry vector for `depth` from the wctx pool (grows the pool
+ * as the walk descends; the buffer is retained across siblings). */
+static struct evec *evec_at(struct wctx *c, int depth)
+{
+	if ((size_t)depth >= c->epoolcap) {
+		size_t nc = c->epoolcap ? c->epoolcap * 2 : 16;
+		while ((size_t)depth >= nc)
+			nc *= 2;
+		c->epool = asp_xrealloc(c->epool, nc * sizeof *c->epool);
+		for (size_t i = c->epoolcap; i < nc; i++)
+			c->epool[i] = (struct evec){ NULL, 0, 0 };
+		c->epoolcap = nc;
+	}
+	c->epool[depth].n = 0; /* reuse the buffer, reset the count */
+	return &c->epool[depth];
+}
+
+/* Zero the reusable scratch (call once per wctx, before any evec_at/read_level). */
+static void wctx_scratch_init(struct wctx *c)
+{
+	c->epool = NULL;
+	c->epoolcap = 0;
+	c->defer = (struct evec){ NULL, 0, 0 };
+}
+
+static void wctx_scratch_free(struct wctx *c)
+{
+	for (size_t i = 0; i < c->epoolcap; i++)
+		free(c->epool[i].v);
+	free(c->epool);
+	free(c->defer.v);
 }
 
 static int is_exec(mode_t m)
@@ -185,7 +227,8 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 	 * dominant cost of -s/-p/-D/--du. Filtering uses name + d_type only, so
 	 * deferring past the filters is correct (and skips stats on filtered-out
 	 * entries). Symlinks and DT_UNKNOWN still stat inline (filtering needs it). */
-	struct evec defer = { NULL, 0, 0 };
+	struct evec *defer = &c->defer; /* reusable; read_level never recurses */
+	defer->n = 0;
 
 	while ((r = asp_dirread(d, &de)) == 1) {
 		if (!o->all && de.name[0] == '.')
@@ -304,7 +347,7 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 
 		evec_push(ev, e);
 		if (deferred)
-			evec_push(&defer, e);
+			evec_push(defer, e);
 	}
 	if (r < 0)
 		(*c->errors)++;
@@ -312,28 +355,28 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 	/* Batch the deferred stats — parallel on the pool for big levels, inline
 	 * otherwise. Output order is fixed (by name) before this runs, so timing
 	 * is the only thing that changes. */
-	if (defer.n) {
+	if (defer->n) {
 		int done = 0;
 		/* io_uring backend (opt-in) batches the statx; on any driver error
 		 * reset the per-entry failure marks and fall back to the pool. */
-		if (c->ring && defer.n >= ASP_STAT_PAR_MIN) {
-			if (asp_ring_stat_batch(c->ring, dirfd, defer.v, defer.n, want_st) == 0)
+		if (c->ring && defer->n >= ASP_STAT_PAR_MIN) {
+			if (asp_ring_stat_batch(c->ring, dirfd, defer->v, defer->n, want_st) == 0)
 				done = 1;
 			else
-				for (size_t k = 0; k < defer.n; k++)
-					defer.v[k]->flags &= (uint16_t)~ENT_STAT_FAILED;
+				for (size_t k = 0; k < defer->n; k++)
+					defer->v[k]->flags &= (uint16_t)~ENT_STAT_FAILED;
 		}
 		if (!done) {
-			struct stat_job j = { dirfd, want_st, defer.v };
+			struct stat_job j = { dirfd, want_st, defer->v };
 			struct asp_pool *p =
-				(c->pool && defer.n >= ASP_STAT_PAR_MIN) ? c->pool : NULL;
-			asp_pool_for(p, defer.n, stat_one, &j);
+				(c->pool && defer->n >= ASP_STAT_PAR_MIN) ? c->pool : NULL;
+			asp_pool_for(p, defer->n, stat_one, &j);
 		}
 
 		/* Drop entries whose stat failed, preserving order (tree drops them). */
 		int dropped = 0;
-		for (size_t k = 0; k < defer.n; k++)
-			if (defer.v[k]->flags & ENT_STAT_FAILED)
+		for (size_t k = 0; k < defer->n; k++)
+			if (defer->v[k]->flags & ENT_STAT_FAILED)
 				dropped = 1;
 		if (dropped) {
 			size_t w = 0;
@@ -347,26 +390,30 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 			ev->n = w;
 		}
 	}
-	free(defer.v);
 }
 
 static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 {
 	struct arena_marker mk = arena_mark(&c->arena);
 	size_t pathlen = c->path.len;
-	struct evec ev = { NULL, 0, 0 };
+	struct evec *ev = evec_at(c, depth);
 	const struct options *o = c->o;
 	int dirfd = asp_dirfd(d);
 	struct ignorefile *ig = push_dir_gitignore(c);
 	struct infofile *inf = push_dir_info(c);
 
-	read_level(c, d, &ev, 0);
+	read_level(c, d, ev, 0);
 
-	asp_sort(ev.v, ev.n, o);
+	asp_sort(ev->v, ev->n, o);
 
-	for (size_t i = 0; i < ev.n; i++) {
-		struct entry *e = ev.v[i];
-		int is_last = (i + 1 == ev.n);
+	/* Cache the buffer + count: recursing deeper may evec_at()->realloc the pool
+	 * array (moving the struct evec), but never this level's separately-malloc'd
+	 * v buffer — so these locals stay valid across the child walk below. */
+	struct entry **vec = ev->v;
+	size_t n = ev->n;
+	for (size_t i = 0; i < n; i++) {
+		struct entry *e = vec[i];
+		int is_last = (i + 1 == n);
 
 		dstr_appendc(&c->path, '/');
 		dstr_append(&c->path, e->name, e->namelen);
@@ -433,7 +480,6 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		infostack_pop(&c->istack);
 	if (ig)
 		gitstack_pop(&c->fstack);
-	free(ev.v);
 	arena_rewind(&c->arena, mk);
 }
 
@@ -443,13 +489,13 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 				  int suppress_pat, struct entry *owner)
 {
 	const struct options *o = c->o;
-	struct evec ev = { NULL, 0, 0 };
+	struct evec *ev = evec_at(c, depth);
 	int dirfd = asp_dirfd(d);
 	size_t pathlen = c->path.len;
 	struct ignorefile *ig = push_dir_gitignore(c);
 	struct infofile *inf = push_dir_info(c);
 
-	read_level(c, d, &ev, suppress_pat);
+	read_level(c, d, ev, suppress_pat);
 
 	/* --filelimit: a directory with more than N listable entries is not opened;
 	 * it shows the marker (via owner->err, rendered like an error node) and its
@@ -457,9 +503,9 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 	 * separate, mode-dependent quirk (plain: "N entries…"+1 dir; --du: renders
 	 * like a failed open, "error opening dir"+1 file) tracked in SR-2.10, where
 	 * the root/child unification belongs — not handled here yet. */
-	if (o->filelimit > 0 && owner && ev.n > (size_t)o->filelimit) {
+	if (o->filelimit > 0 && owner && ev->n > (size_t)o->filelimit) {
 		char m[80];
-		snprintf(m, sizeof m, "%zu entries exceeds filelimit, not opening dir", ev.n);
+		snprintf(m, sizeof m, "%zu entries exceeds filelimit, not opening dir", ev->n);
 		owner->err = arena_strdup(&c->arena, m);
 		/* DEVIATION D1: a tripped filelimit is an error -> exit 2, in EVERY mode.
 		 * tree exits 2 only on its streaming path and wrongly reports 0 under
@@ -469,12 +515,15 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 			infostack_pop(&c->istack);
 		if (ig)
 			gitstack_pop(&c->fstack);
-		free(ev.v);
-		return NULL; /* no children: emit_level shows owner->err */
+		return NULL; /* no children: emit_level shows owner->err (pool keeps ev) */
 	}
 
-	for (size_t i = 0; i < ev.n; i++) {
-		struct entry *e = ev.v[i];
+	/* Cache buffer + count: the per-child build_level recursion below can
+	 * evec_at()->realloc the pool array, but not this level's v buffer. */
+	struct entry **vec = ev->v;
+	size_t n = ev->n;
+	for (size_t i = 0; i < n; i++) {
+		struct entry *e = vec[i];
 		int dir_like = e->type == ASP_DIR || (e->type == ASP_LNK && e->ltype == ASP_DIR);
 
 		/* --matchdirs: a dir whose name matches -P shows its contents
@@ -526,12 +575,11 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 	if (ig)
 		gitstack_pop(&c->fstack);
 
-	struct entry **arr = arena_alloc(&c->arena, (ev.n + 1) * sizeof *arr);
-	for (size_t i = 0; i < ev.n; i++)
-		arr[i] = ev.v[i];
-	arr[ev.n] = NULL;
-	free(ev.v);
-	return arr;
+	struct entry **arr = arena_alloc(&c->arena, (n + 1) * sizeof *arr);
+	for (size_t i = 0; i < n; i++)
+		arr[i] = vec[i];
+	arr[n] = NULL;
+	return arr; /* pool keeps ev's buffer for the next sibling */
 }
 
 /* Bottom-up --prune of empty directories (not --matchdirs-protected). */
@@ -730,6 +778,7 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	c.info_top = 0;
 	c.pool = NULL; /* synthetic entries carry their own stat; no real lstat */
 	c.ring = NULL;
+	wctx_scratch_init(&c);
 	inoset_init(&c.seen);
 
 	struct entry **top = synth_level(&c, ftop, 0);
@@ -749,6 +798,7 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 		emit_level(&c, top, 1);
 	}
 
+	wctx_scratch_free(&c);
 	inoset_destroy(&c.seen);
 	dstr_free(&c.path);
 	arena_destroy(&c.arena);
@@ -801,6 +851,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	c.istack = NULL;
 	c.info_top = 0;
 	inoset_init(&c.seen);
+	wctx_scratch_init(&c);
 
 	/* Backend for the deferred metadata stat pass. Created only when some flag
 	 * actually stats every entry, so the default (d_type-only) fast path pays
@@ -918,6 +969,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	asp_ring_destroy(c.ring);
 	gitstack_flush(&c.fstack);
 	infostack_flush(&c.istack);
+	wctx_scratch_free(&c);
 	inoset_destroy(&c.seen);
 	dstr_free(&c.path);
 	arena_destroy(&c.arena);

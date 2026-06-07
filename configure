@@ -79,17 +79,20 @@ fi
 # Reentrant qsort: GNU/C23 signature (cmp last) on Linux/musl/FreeBSD-13+, BSD
 # signature (thunk first) on macOS/older BSD. Lets sort.c pass context instead of
 # file-scope globals; if neither, sort.c falls back to a single-thread static ctx.
+# -Werror -Wpedantic so the wrong signature FAILS: passing the cmp where the
+# other ABI wants the thunk is a function/void* conversion, which is only a
+# warning by default — macOS's BSD qsort_r would otherwise pass the GNU probe.
 HAS_QSORT_R_GNU=$(try_compile qsort_r_gnu '
 #define _GNU_SOURCE
 #include <stdlib.h>
 static int c(const void*a,const void*b,void*x){(void)a;(void)b;(void)x;return 0;}
-int main(void){int v[1]={0}; qsort_r(v,1,sizeof v[0],c,(void*)0); return 0;}' '')
+int main(void){int v[1]={0}; qsort_r(v,1,sizeof v[0],c,(void*)0); return 0;}' '-Werror -Wpedantic')
 HAS_QSORT_R_BSD=0
 if [ "$HAS_QSORT_R_GNU" != 1 ]; then
 	HAS_QSORT_R_BSD=$(try_compile qsort_r_bsd '
 #include <stdlib.h>
 static int c(void*x,const void*a,const void*b){(void)a;(void)b;(void)x;return 0;}
-int main(void){int v[1]={0}; qsort_r(v,1,sizeof v[0],(void*)0,c); return 0;}' '')
+int main(void){int v[1]={0}; qsort_r(v,1,sizeof v[0],(void*)0,c); return 0;}' '-Werror -Wpedantic')
 fi
 
 # Pick the directory-read backend (Linux: getdents64; BSD/macOS: getdirentries; else readdir)
