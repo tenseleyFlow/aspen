@@ -104,6 +104,7 @@ CASES='%C
 -o %O -J %M
 -o %O -H . --hintro=%h --houtro=%o %M
 --filelimit 3 %R/fl
+--filelimit 3 -J %R/fl
 --filelimit 3 -X %R/fl
 --filelimit 3 -H . --hintro=%h --houtro=%o %R/fl
 --filelimit 3 -d %R/fl
@@ -293,6 +294,15 @@ CASES='%C
 
 normprog() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /'; }
 
+# Canonicalize documented intentional deviations (.docs/deviations.md) on BOTH
+# tools' stdout, so a case that merely TOUCHES a deviation still gates everything
+# else byte-for-byte. Applied to ref-vs-ref too (a no-op there). Only the exact
+# bug shapes are rewritten, so it can't mask a real difference:
+#   D3 — tree's signed-char %02X sign-extends a high byte to %FFFFFFC3; we and
+#        the canonical form use %C3.  D2 — tree leaks an empty ,"contents":[ ]
+#        after an error; valid JSON has no such key.
+normdev() { sed 's/%FFFFFF\([0-9A-Fa-f][0-9A-Fa-f]\)/%\1/g; s/,"contents":\[ *\]//g'; }
+
 run_case() { # <bin> <case-string>
 	_bin=$1
 	_expanded=$(printf '%s' "$2" | sed "s#%C#$corpus#g; s#%W#$weird#g; s#%L#$lnk#g; s#%M#$meta#g; s#%V#$vert#g; s#%P#$prn#g; s#%G#$gign#g; s#%I#$inf#g; s#%h#$work/hintro#g; s#%o#$work/houtro#g; s#%F#$ff#g; s#%E#$dep#g; s#%R#$rts#g; s#%O#$work/ofile#g")
@@ -319,9 +329,9 @@ phase() { # <bin_a> <bin_b> <label>
 		[ -n "$_c" ] || continue
 		_n=$((_n + 1))
 		run_case "$_a" "$_c"
-		cp "$work/o.out" "$work/a.out"; normprog <"$work/o.err" >"$work/a.err"; cp "$work/o.rc" "$work/a.rc"
+		normdev <"$work/o.out" >"$work/a.out"; normprog <"$work/o.err" >"$work/a.err"; cp "$work/o.rc" "$work/a.rc"
 		run_case "$_b" "$_c"
-		cp "$work/o.out" "$work/b.out"; normprog <"$work/o.err" >"$work/b.err"; cp "$work/o.rc" "$work/b.rc"
+		normdev <"$work/o.out" >"$work/b.out"; normprog <"$work/o.err" >"$work/b.err"; cp "$work/o.rc" "$work/b.rc"
 		if ! diff -q "$work/a.out" "$work/b.out" >/dev/null 2>&1 ||
 		   ! diff -q "$work/a.err" "$work/b.err" >/dev/null 2>&1 ||
 		   [ "$(cat "$work/a.rc")" != "$(cat "$work/b.rc")" ]; then

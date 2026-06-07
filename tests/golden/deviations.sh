@@ -51,6 +51,17 @@ else
 	grep -q 'exceeds filelimit' "$dv/j.o" || { echo "DEVIATIONS D2: setup wrong, no filelimit error in -J output"; fail=1; }
 fi
 
+# D3: percent-encoding uses the real byte. A UTF-8 name under -H must encode to
+# %C3%A9, not tree's sign-extended %FFFFFFC3%FFFFFFA9.
+mkdir -p "$dv/ue"; : > "$dv/ue/café"
+"$ASP" -H . "$dv/ue" >"$dv/h.o" 2>/dev/null
+if grep -q '%FFFFFF' "$dv/h.o"; then
+	echo "DEVIATIONS D3: -H href sign-extended a high byte (regressed to tree's bug)"
+	grep -oE 'href="[^"]*caf[^"]*"' "$dv/h.o" | head -1; fail=1
+elif ! grep -q 'caf%C3%A9' "$dv/h.o"; then
+	echo "DEVIATIONS D3: expected caf%C3%A9 in href, got:"; grep -oE 'href="[^"]*caf[^"]*"' "$dv/h.o" | head -1; fail=1
+fi
+
 chmod -R u+rwx "$dv" 2>/dev/null || :
 rm -rf "$dv"
 
