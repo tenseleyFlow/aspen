@@ -53,14 +53,14 @@ else
 fi
 
 # Discovery check (Sprint 01): traversal must find exactly what tree finds.
-if [ -x tests/golden/walk.sh ] && [ -x ./aspen ]; then
+if [ -f tests/golden/walk.sh ] && [ -x ./aspen ]; then
 	if ! sh tests/golden/walk.sh; then
 		fail=1
 	fi
 fi
 
 # Colorization parity (Sprint 07a).
-if [ -x tests/golden/color.sh ] && [ -x ./aspen ]; then
+if [ -f tests/golden/color.sh ] && [ -x ./aspen ]; then
 	if ! sh tests/golden/color.sh; then
 		fail=1
 	fi
@@ -131,8 +131,11 @@ if [ -f tests/golden/fuzz.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
-# Golden parity suite (present once tests/golden/run.sh lands).
-if [ -x tests/golden/run.sh ]; then
+# Golden parity suite — the core 243-case matrix vs tree 2.3.2. Gate on -f, not
+# -x: these scripts run via `sh` and are NOT executable in a fresh checkout, so
+# an -x gate silently SKIPPED the whole golden matrix under `gmake test`/CI (the
+# fuzzer and walk.sh still ran, masking it). Found via `make coverage`.
+if [ -f tests/golden/run.sh ]; then
 	if ! sh tests/golden/run.sh; then
 		fail=1
 	fi

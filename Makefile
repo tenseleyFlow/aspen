@@ -64,7 +64,7 @@ SRC = \
 OBJ = $(SRC:.c=.o)
 DEP = $(OBJ:.o=.d)
 
-.PHONY: all clean distclean install uninstall test bench fmt analyze release debug pgo
+.PHONY: all clean distclean install uninstall test bench fmt analyze release debug pgo coverage
 
 all: config.h aspen asp
 
@@ -99,6 +99,11 @@ test: all
 bench: release
 	@sh bench/run.sh
 
+# Line coverage of the aspen binary over the whole test suite. clang -> llvm-cov
+# source-based report; gcc -> gcovr/gcov. Leaves a normal build afterward.
+coverage:
+	@sh tests/coverage.sh
+
 fmt:
 	@command -v clang-format >/dev/null && clang-format -i $(SRC) src/*.h || echo "clang-format not found"
 
@@ -116,6 +121,7 @@ uninstall:
 
 clean:
 	rm -f $(OBJ) $(DEP) aspen asp
+	rm -f src/*.gcno src/*.gcda src/*.gcov src/sys/*.gcno src/sys/*.gcda src/render/*.gcno src/render/*.gcda *.gcov
 
 distclean: clean
 	rm -f config.h config.mk
