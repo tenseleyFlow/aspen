@@ -45,8 +45,7 @@ struct wctx {
 	struct infofile *istack;   /* --info annotation stack */
 	int info_top;              /* current dir has its own .info */
 	dev_t root_dev;
-	struct asp_pool *pool;     /* metadata-stat workers (NULL = serial) */
-	struct asp_ring *ring;     /* io_uring statx backend (NULL = use pool) */
+	struct statprov *sp;       /* metadata-stat backend seam (serial/pool/uring) */
 
 	/* Reusable scratch — kept across the whole walk so a level pays no per-dir
 	 * malloc (the "arena, no malloc churn" budget). One entry-vector per active
@@ -215,6 +214,67 @@ static void stat_one(void *arg, size_t i)
 		memcpy((void *)e->st, &si, sizeof si); /* e->st pre-allocated by caller */
 }
 
+/* The metadata-stat backend seam. read_level is backend-blind: it hands a batch
+ * of deferred entries to statprov_batch, which stats them (into e->st/ino/dev,
+ * ENT_STAT_FAILED on per-entry failure) using whichever backend was selected at
+ * startup — serial, the thread pool, or io_uring. Built once (in render_tree)
+ * and shared across roots. ASP_IO selects (default/threads=pool, uring=io_uring,
+ * serial=inline); only created when some flag actually stats every entry. */
+struct statprov {
+	struct asp_pool *pool; /* NULL = serial (run inline) */
+	struct asp_ring *ring; /* NULL = no io_uring */
+};
+
+struct statprov *asp_statprov_create(const struct options *o)
+{
+	struct statprov *sp = asp_xmalloc(sizeof *sp);
+	sp->pool = NULL;
+	sp->ring = NULL;
+
+	int stat_heavy = meta_wanted(o) || sort_needs_stat(o) || o->colorize ||
+			 o->classify || o->xdev || o->follow;
+	const char *iomode = getenv("ASP_IO");
+	int serial = (o->threads == 1) || (iomode && !strcmp(iomode, "serial"));
+	if (stat_heavy && !serial && !(o->fromfile || o->fromtabfile)) {
+		if (iomode && !strcmp(iomode, "uring"))
+			sp->ring = asp_ring_create(256); /* NULL if unavailable */
+		if (!sp->ring) {
+			int workers = (o->threads > 0) ? o->threads
+						       : asp_pool_default_workers();
+			if (workers > 1)
+				sp->pool = asp_pool_create(workers);
+		}
+	}
+	return sp;
+}
+
+void asp_statprov_destroy(struct statprov *sp)
+{
+	if (!sp)
+		return;
+	asp_pool_destroy(sp->pool);
+	asp_ring_destroy(sp->ring);
+	free(sp);
+}
+
+/* Stat the n deferred entries (dirfd-relative) into their fields; the chosen
+ * backend is internal. Sub-threshold batches run inline regardless. */
+static void statprov_batch(struct statprov *sp, int dirfd, struct entry **ents,
+			   size_t n, int want_st)
+{
+	/* io_uring (opt-in) batches statx; on any driver error reset the per-entry
+	 * failure marks and fall back to the pool/inline path. */
+	if (sp->ring && n >= ASP_STAT_PAR_MIN) {
+		if (asp_ring_stat_batch(sp->ring, dirfd, ents, n, want_st) == 0)
+			return;
+		for (size_t k = 0; k < n; k++)
+			ents[k]->flags &= (uint16_t)~ENT_STAT_FAILED;
+	}
+	struct stat_job j = { dirfd, want_st, ents };
+	struct asp_pool *p = (sp->pool && n >= ASP_STAT_PAR_MIN) ? sp->pool : NULL;
+	asp_pool_for(p, n, stat_one, &j);
+}
+
 static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int suppress_pat)
 {
 	const struct options *o = c->o;
@@ -356,22 +416,7 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 	 * otherwise. Output order is fixed (by name) before this runs, so timing
 	 * is the only thing that changes. */
 	if (defer->n) {
-		int done = 0;
-		/* io_uring backend (opt-in) batches the statx; on any driver error
-		 * reset the per-entry failure marks and fall back to the pool. */
-		if (c->ring && defer->n >= ASP_STAT_PAR_MIN) {
-			if (asp_ring_stat_batch(c->ring, dirfd, defer->v, defer->n, want_st) == 0)
-				done = 1;
-			else
-				for (size_t k = 0; k < defer->n; k++)
-					defer->v[k]->flags &= (uint16_t)~ENT_STAT_FAILED;
-		}
-		if (!done) {
-			struct stat_job j = { dirfd, want_st, defer->v };
-			struct asp_pool *p =
-				(c->pool && defer->n >= ASP_STAT_PAR_MIN) ? c->pool : NULL;
-			asp_pool_for(p, defer->n, stat_one, &j);
-		}
+		statprov_batch(c->sp, dirfd, defer->v, defer->n, want_st);
 
 		/* Drop entries whose stat failed, preserving order (tree drops them). */
 		int dropped = 0;
@@ -776,8 +821,7 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	c.fstack = NULL;
 	c.istack = NULL;
 	c.info_top = 0;
-	c.pool = NULL; /* synthetic entries carry their own stat; no real lstat */
-	c.ring = NULL;
+	c.sp = NULL; /* synthetic entries carry their own stat; no real lstat */
 	wctx_scratch_init(&c);
 	inoset_init(&c.seen);
 
@@ -806,7 +850,8 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 }
 
 void asp_walk(const char *root, const struct options *o, const struct renderer *r,
-	      void *ctx, struct totals *tot, int *errors, int last_root)
+	      void *ctx, struct totals *tot, int *errors, struct statprov *sp,
+	      int last_root)
 {
 	if (o->fromfile || o->fromtabfile) {
 		asp_walk_fromfile(root, o, r, ctx, tot, errors, last_root);
@@ -852,31 +897,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	c.info_top = 0;
 	inoset_init(&c.seen);
 	wctx_scratch_init(&c);
-
-	/* Backend for the deferred metadata stat pass. Created only when some flag
-	 * actually stats every entry, so the default (d_type-only) fast path pays
-	 * nothing. Selection (ASP_IO, for A/B benchmarking): default/"threads" use
-	 * the portable pool; "uring" uses io_uring when built+available (else pool);
-	 * "serial" or --threads 1 disables both. io_uring stays opt-in until it is
-	 * benchmarked to beat the pool. */
-	c.pool = NULL;
-	c.ring = NULL;
-	{
-		int stat_heavy = meta_wanted(o) || sort_needs_stat(o) || o->colorize ||
-				 o->classify || o->xdev || o->follow;
-		const char *iomode = getenv("ASP_IO");
-		int serial = (o->threads == 1) || (iomode && !strcmp(iomode, "serial"));
-		if (stat_heavy && !serial) {
-			if (iomode && !strcmp(iomode, "uring"))
-				c.ring = asp_ring_create(256); /* NULL if unavailable */
-			if (!c.ring) {
-				int workers = (o->threads > 0) ? o->threads
-							       : asp_pool_default_workers();
-				if (workers > 1)
-					c.pool = asp_pool_create(workers);
-			}
-		}
-	}
+	c.sp = sp; /* shared stat backend, built once in render_tree (SR-2.5) */
 
 	/* Bottom of the filter stack: an explicit --gitfile and, with --gitignore,
 	 * $GIT_DIR/info/exclude. (The implicit parent-.gitignore walk is deferred.) */
@@ -965,9 +986,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	}
 
 	asp_dirclose(d);
-	asp_pool_destroy(c.pool);
-	asp_ring_destroy(c.ring);
-	gitstack_flush(&c.fstack);
+	gitstack_flush(&c.fstack); /* c.sp is owned by render_tree, not freed here */
 	infostack_flush(&c.istack);
 	wctx_scratch_free(&c);
 	inoset_destroy(&c.seen);

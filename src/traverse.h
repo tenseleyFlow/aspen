@@ -19,9 +19,17 @@ struct totals {
 
 struct renderer; /* render.h */
 
+/* Metadata-stat backend (serial/pool/io_uring), built once and shared across all
+ * roots (SR-2.4/2.5). Opaque here; created/destroyed by render_tree. */
+struct statprov;
+struct statprov *asp_statprov_create(const struct options *o);
+void asp_statprov_destroy(struct statprov *sp);
+
 /* Walk one root's subtree, emitting via the renderer. Prints the root line,
- * counts into *tot (root counts as a dir on success), adds to *errors. */
+ * counts into *tot (root counts as a dir on success), adds to *errors. `sp` is
+ * the shared stat backend (NULL = serial). */
 void asp_walk(const char *root, const struct options *o, const struct renderer *r,
-	      void *ctx, struct totals *tot, int *errors, int last_root);
+	      void *ctx, struct totals *tot, int *errors, struct statprov *sp,
+	      int last_root);
 
 #endif /* ASP_TRAVERSE_H */
