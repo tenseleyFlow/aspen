@@ -24,10 +24,10 @@ void asp_out_maybe(struct dstr *o, int fd)
 		asp_out_flush(o, fd);
 }
 
-void asp_out_indent4(struct dstr *o, int level, int noindent)
+void asp_out_indent4(struct dstr *o, int level, int noindent, const char *unit)
 {
 	if (noindent)
 		return;
 	for (int i = 0; i <= level; i++)
-		dstr_appendz(o, "    ");
+		dstr_appendz(o, unit);
 }

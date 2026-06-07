@@ -218,6 +218,20 @@ CASES='%C
 -X --condense --du %D
 -J --condense -f %D
 -l %D
+--compress 2 %V
+--compress 3 %V
+--compress=1 %V
+--compress=-2 %V
+--compress 4 %V
+--compress 2 -F %C
+--charset=ascii --compress 2 %V
+--charset=ascii --compress=-3 %V
+-J --compress 2 %V
+-J --compress 3 %V
+-X --compress 2 %V
+-X --compress=-1 %V
+-H --compress 2 --hintro %h --houtro %o %V
+--compress 2 --condense %D
 --gitignore %G
 --gitignore -a %G
 --gitignore -F %G

@@ -53,9 +53,11 @@ norm() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /; s/^usage: tree /usage: PROG
 #     with no fixed transform to normalize. Covered by golden %M + deviations.sh).
 #   (-f was excluded for SR-2.15; re-added now that -J/-X thread the full path.)
 # These are gated elsewhere (golden matrix, usage.sh, outfile.sh).
+# --compress carries a value, so it is glued (=N); a bare --compress would eat the
+# tree-path argument. Both signs exercised (level + remove_space).
 FLAGPOOL="-a -d -f -i -l -x -s -h -p -u -g -D -F -Q -N -q -C -n -A -S -t -c -v -U -r \
 --du --prune --dirsfirst --filesfirst --noreport --matchdirs --condense \
---ignore-case --metafirst -J -X -L1 -L2 -L3"
+--compress=2 --compress=-1 --ignore-case --metafirst -J -X -L1 -L2 -L3"
 
 echo "FUZZ: $N trees x [$locales] (awk: $(awk --version 2>/dev/null | head -1 || echo unknown))"
 echo "FUZZ: base seed $base"

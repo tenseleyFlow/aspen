@@ -66,13 +66,20 @@ static void ensure_last(struct html_ctx *h, int depth)
  * each level separated by &nbsp;. */
 static void html_indent(struct html_ctx *h, int depth, int is_last)
 {
+	/* --compress: narrower connectors (ld->*[clvl]) + narrower gap (htmlspaces);
+	 * a negative level (remove_space) drops the trailing &nbsp;. */
+	static const char *htmlspaces[3] = { SP SP SP, SP SP, SP };
+	int clvl = h->o->compress_indent;
+	int rs = h->o->remove_space;
 	dstr_appendc(&h->out, '\t');
 	for (int i = 1; i < depth; i++) {
-		dstr_appendz(&h->out, h->last[i] ? SP SP SP : h->ld->vert);
-		dstr_appendz(&h->out, SP);
+		dstr_appendz(&h->out, h->last[i] ? htmlspaces[clvl] : h->ld->vert[clvl]);
+		if (!rs)
+			dstr_appendz(&h->out, SP);
 	}
-	dstr_appendz(&h->out, is_last ? h->ld->corner : h->ld->vert_left);
-	dstr_appendz(&h->out, SP);
+	dstr_appendz(&h->out, is_last ? h->ld->corner[clvl] : h->ld->vert_left[clvl]);
+	if (!rs)
+		dstr_appendz(&h->out, SP);
 	ensure_last(h, depth);
 	h->last[depth] = (unsigned char)(is_last ? 1 : 0);
 }

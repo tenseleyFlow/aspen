@@ -45,6 +45,8 @@ struct options {
 	long filelimit;
 	int metafirst;
 	int condense; /* --condense: collapse singleton dir chains onto one line */
+	int compress_indent; /* --compress: linedraw width level 0..2 (narrower indent) */
+	int remove_space;    /* --compress<0: drop the trailing space after a connector */
 
 	/* sorting (Sprint 05) */
 	int reverse, dirsfirst, filesfirst;

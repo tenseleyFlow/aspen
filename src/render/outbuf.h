@@ -16,7 +16,8 @@ void asp_out_flush(struct dstr *o, int fd);
 /* Flush once the buffer reaches the drain threshold (hot-loop friendly). */
 void asp_out_maybe(struct dstr *o, int fd);
 
-/* JSON/XML indent: (level+1) x 4 spaces, suppressed under --noindent. */
-void asp_out_indent4(struct dstr *o, int level, int noindent);
+/* JSON/XML indent: (level+1) repetitions of `unit`, suppressed under --noindent.
+ * `unit` is normally "    " (4 spaces); --compress narrows it (tree's spaces[]). */
+void asp_out_indent4(struct dstr *o, int level, int noindent, const char *unit);
 
 #endif /* ASP_RENDER_OUTBUF_H */

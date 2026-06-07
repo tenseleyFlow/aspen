@@ -59,9 +59,17 @@ static void jenc(struct dstr *o, const char *s)
 	}
 }
 
+/* One indent unit, narrowed by --compress (tree's spaces[clvl], clvl = level +
+ * remove_space); the default ("    ") is index 0. */
+static const char *junit(struct json_ctx *j)
+{
+	static const char *spaces[] = { "    ", "   ", "  ", " ", "" };
+	return spaces[j->o->compress_indent + j->o->remove_space];
+}
+
 static void jindent(struct json_ctx *j, int level)
 {
-	asp_out_indent4(&j->out, level, j->o->noindent);
+	asp_out_indent4(&j->out, level, j->o->noindent, junit(j));
 }
 
 static void jfillinfo(struct json_ctx *j, const struct asp_statinfo *st)
@@ -187,7 +195,7 @@ static void jemit_level(struct json_ctx *j, struct entry **arr, int depth, struc
 			dstr_appendz(&j->out, e->err);
 			dstr_appendz(&j->out, "\"}");
 			if (!j->o->noindent)
-				dstr_appendz(&j->out, "    ");
+				dstr_appendz(&j->out, junit(j)); /* tree's json_indent(-1) */
 			dstr_appendz(&j->out, "]}");
 			dstr_appendz(&j->out, last ? "" : ",");
 			dstr_appendz(&j->out, jnl(j));

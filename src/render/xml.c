@@ -38,7 +38,10 @@ static void xflush(struct xml_ctx *x) { asp_out_flush(&x->out, x->fd); }
 static void xmaybe(struct xml_ctx *x) { asp_out_maybe(&x->out, x->fd); }
 static void xindent(struct xml_ctx *x, int level)
 {
-	asp_out_indent4(&x->out, level, x->o->noindent);
+	/* --compress narrows the indent unit (tree's spaces[clvl]); default index 0. */
+	static const char *spaces[] = { "    ", "   ", "  ", " ", "" };
+	int clvl = x->o->compress_indent + x->o->remove_space;
+	asp_out_indent4(&x->out, level, x->o->noindent, spaces[clvl]);
 }
 
 static void xfillinfo(struct xml_ctx *x, const struct asp_statinfo *st)

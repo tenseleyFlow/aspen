@@ -132,12 +132,19 @@ static void ensure_last(struct unix_ctx *u, int depth)
 
 static void draw_indent(struct unix_ctx *u, int depth, int is_last)
 {
+	/* --compress: narrower connector forms (ld->*[clvl]) + narrower ancestor gap
+	 * (spaces[clvl]); a negative level (remove_space) drops the trailing space. */
+	static const char *spaces[3] = { "   ", "  ", " " };
+	int clvl = u->o->compress_indent;
+	int rs = u->o->remove_space;
 	for (int i = 1; i < depth; i++) {
-		dstr_appendz(&u->out, u->last[i] ? "   " : u->ld->vert);
-		dstr_appendc(&u->out, ' ');
+		dstr_appendz(&u->out, u->last[i] ? spaces[clvl] : u->ld->vert[clvl]);
+		if (!rs)
+			dstr_appendc(&u->out, ' ');
 	}
-	dstr_appendz(&u->out, is_last ? u->ld->corner : u->ld->vert_left);
-	dstr_appendc(&u->out, ' ');
+	dstr_appendz(&u->out, is_last ? u->ld->corner[clvl] : u->ld->vert_left[clvl]);
+	if (!rs)
+		dstr_appendc(&u->out, ' ');
 	ensure_last(u, depth);
 	u->last[depth] = (unsigned char)(is_last ? 1 : 0);
 }
@@ -146,9 +153,13 @@ static void draw_indent(struct unix_ctx *u, int depth, int is_last)
  * comment hangs under the entry), matching tree's indent() with dirs[d+1]=1. */
 static void draw_comment_indent(struct unix_ctx *u, int depth)
 {
+	static const char *spaces[3] = { "   ", "  ", " " };
+	int clvl = u->o->compress_indent;
+	int rs = u->o->remove_space;
 	for (int i = 1; i <= depth; i++) {
-		dstr_appendz(&u->out, u->last[i] ? "   " : u->ld->vert);
-		dstr_appendc(&u->out, ' ');
+		dstr_appendz(&u->out, u->last[i] ? spaces[clvl] : u->ld->vert[clvl]);
+		if (!rs)
+			dstr_appendc(&u->out, ' ');
 	}
 }
 

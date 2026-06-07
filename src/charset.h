@@ -2,18 +2,19 @@
 #define ASP_CHARSET_H
 
 /*
- * Line-drawing charset selection. The indent connectors are the widest ([0])
- * forms of tree 2.3.2's cstable; indent() appends one space, reproducing 2.3.2's
- * output. Selection: -A => ANSI; else --charset/-S, then $TREE_CHARSET, then a
- * UTF-8 locale, else ASCII fallback.
+ * Line-drawing charset selection. Each connector carries tree 2.3.2's three
+ * width-forms ([0] widest .. [2] narrowest), indexed by the --compress level;
+ * the default ([0]) plus indent()'s trailing space reproduces 2.3.2's output.
+ * Selection: -A => ANSI; else --charset/-S, then $TREE_CHARSET, then a UTF-8
+ * locale, else ASCII fallback.
  */
 
 #include "options.h"
 
 struct linedraw {
-	const char *vert;      /* continuing-ancestor glyph (widest form) */
-	const char *vert_left; /* branch (non-last entry) */
-	const char *corner;    /* last entry */
+	const char *vert[3];      /* continuing-ancestor glyph, by --compress level */
+	const char *vert_left[3]; /* branch (non-last entry) */
+	const char *corner[3];    /* last entry */
 	/* .info comment decorators (tree's ctop/cbot/cmid/cext/csingle) */
 	const char *ctop, *cbot, *cmid, *cext, *csingle;
 };

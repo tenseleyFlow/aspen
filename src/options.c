@@ -256,6 +256,17 @@ static int parse_long(char *a, int *i, int argc, char **argv,
 	if (!strcmp(a, "--fflinks")) { TOG(fflinks); return 0; }
 	if (!strcmp(a, "--hyperlink")) { TOG(hyperlink); return 0; }
 	if (!strcmp(a, "--opt-toggle")) return 1; /* signal toggle flip to caller */
+	if ((v = long_val(a, "--compress", i, argc, argv))) {
+		/* tree's exact clamp: negative => remove_space + abs; >3 => noindent;
+		 * then decrement so the stored level indexes linedraw[0..2]. */
+		int ci = atoi(v);
+		o->remove_space = ci < 0;
+		if (ci < 0) ci = -ci;
+		if (ci > 3) { ci = 0; o->noindent = 1; }
+		if (ci > 0) ci--;
+		o->compress_indent = ci;
+		return 0;
+	}
 	if ((v = long_val(a, "--charset", i, argc, argv))) { o->charset = v; return 0; }
 	if ((v = long_val(a, "--filelimit", i, argc, argv))) { o->filelimit = atol(v); return 0; }
 	if ((v = long_val(a, "--threads", i, argc, argv))) { o->threads = atoi(v); if (o->threads < 0) o->threads = 0; return 0; }
