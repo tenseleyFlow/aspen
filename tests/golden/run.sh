@@ -186,6 +186,15 @@ CASES='%C
 --info -F %I
 --info --du %I
 --infofile %I/.info %I
+--gitfile=%G/.gitignore %C
+--gitignore --gitfile=%G/.gitignore %G
+--opt-toggle %C
+-a --opt-toggle -a %C
+-n %C
+-n -a %C
+-R %C
+-R -a %C
+-H . --hintro=%h --houtro=%o -T MyTitle %C
 -J %C
 -J -i %C
 -J -pugsD %M

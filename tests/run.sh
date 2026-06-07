@@ -80,6 +80,13 @@ if [ -f tests/golden/outfile.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# Per-parser-flag golden coverage lint (SR-1.7): every flag has >=1 case.
+if [ -f tests/golden/flag_coverage.sh ]; then
+	if ! sh tests/golden/flag_coverage.sh; then
+		fail=1
+	fi
+fi
+
 # Usage/help/version/bad-flag parity (SR-1.6): name-only divergence from tree.
 if [ -f tests/golden/usage.sh ] && [ -x ./aspen ]; then
 	if ! sh tests/golden/usage.sh; then
