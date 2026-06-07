@@ -1,6 +1,7 @@
 #include "render/unix.h"
 #include "render/escape.h"
 #include "render/fileinfo.h"
+#include "render/outbuf.h"
 #include "render/name.h"
 #include "dstr.h"
 #include "entry.h"
@@ -115,26 +116,8 @@ void unix_ctx_destroy(struct unix_ctx *u)
 	free(u->last);
 }
 
-static void flush_all(struct unix_ctx *u)
-{
-	size_t off = 0;
-	while (off < u->out.len) {
-		ssize_t w = write(u->fd, u->out.data + off, u->out.len - off);
-		if (w < 0) {
-			if (errno == EINTR)
-				continue;
-			break; /* output error; nothing graceful to do mid-tree */
-		}
-		off += (size_t)w;
-	}
-	dstr_clear(&u->out);
-}
-
-static void maybe_flush(struct unix_ctx *u)
-{
-	if (u->out.len >= (64u * 1024u))
-		flush_all(u);
-}
+static void flush_all(struct unix_ctx *u) { asp_out_flush(&u->out, u->fd); }
+static void maybe_flush(struct unix_ctx *u) { asp_out_maybe(&u->out, u->fd); }
 
 static void ensure_last(struct unix_ctx *u, int depth)
 {

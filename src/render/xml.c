@@ -1,6 +1,7 @@
 #include "render/xml.h"
 #include "render/escape.h"
 #include "render/fileinfo.h"
+#include "render/outbuf.h"
 #include "charset.h"
 #include "dstr.h"
 #include "entry.h"
@@ -33,33 +34,11 @@ static const char *xnl(struct xml_ctx *x)
 	return x->o->noindent ? "" : "\n";
 }
 
-static void xflush(struct xml_ctx *x)
-{
-	size_t off = 0;
-	while (off < x->out.len) {
-		ssize_t w = write(x->fd, x->out.data + off, x->out.len - off);
-		if (w < 0) {
-			if (errno == EINTR)
-				continue;
-			break;
-		}
-		off += (size_t)w;
-	}
-	dstr_clear(&x->out);
-}
-
-static void xmaybe(struct xml_ctx *x)
-{
-	if (x->out.len >= (64u * 1024u))
-		xflush(x);
-}
-
+static void xflush(struct xml_ctx *x) { asp_out_flush(&x->out, x->fd); }
+static void xmaybe(struct xml_ctx *x) { asp_out_maybe(&x->out, x->fd); }
 static void xindent(struct xml_ctx *x, int level)
 {
-	if (x->o->noindent)
-		return;
-	for (int i = 0; i <= level; i++)
-		dstr_appendz(&x->out, "    ");
+	asp_out_indent4(&x->out, level, x->o->noindent);
 }
 
 static void xfillinfo(struct xml_ctx *x, const struct asp_statinfo *st)

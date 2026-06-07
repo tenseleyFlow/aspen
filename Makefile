@@ -59,6 +59,7 @@ SRC = \
 	src/render/html.c \
 	src/render/json.c \
 	src/render/name.c \
+	src/render/outbuf.c \
 	src/render/unix.c \
 	src/render/xml.c
 OBJ = $(SRC:.c=.o)

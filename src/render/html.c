@@ -1,6 +1,7 @@
 #include "render/html.h"
 #include "render/escape.h"
 #include "render/fileinfo.h"
+#include "render/outbuf.h"
 #include "charset.h"
 #include "dstr.h"
 #include "entry.h"
@@ -35,26 +36,8 @@ void html_ctx_destroy(struct html_ctx *h)
 	free(h->last);
 }
 
-static void hflush(struct html_ctx *h)
-{
-	size_t off = 0;
-	while (off < h->out.len) {
-		ssize_t w = write(h->fd, h->out.data + off, h->out.len - off);
-		if (w < 0) {
-			if (errno == EINTR)
-				continue;
-			break;
-		}
-		off += (size_t)w;
-	}
-	dstr_clear(&h->out);
-}
-
-static void hmaybe(struct html_ctx *h)
-{
-	if (h->out.len >= (64u * 1024u))
-		hflush(h);
-}
+static void hflush(struct html_ctx *h) { asp_out_flush(&h->out, h->fd); }
+static void hmaybe(struct html_ctx *h) { asp_out_maybe(&h->out, h->fd); }
 
 static void cat_file(struct html_ctx *h, const char *path)
 {

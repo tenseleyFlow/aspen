@@ -1,5 +1,6 @@
 #include "render/json.h"
 #include "render/fileinfo.h"
+#include "render/outbuf.h"
 #include "dstr.h"
 #include "entry.h"
 #include "idcache.h"
@@ -31,26 +32,8 @@ static const char *jnl(struct json_ctx *j)
 	return j->o->noindent ? "" : "\n";
 }
 
-static void jflush(struct json_ctx *j)
-{
-	size_t off = 0;
-	while (off < j->out.len) {
-		ssize_t w = write(j->fd, j->out.data + off, j->out.len - off);
-		if (w < 0) {
-			if (errno == EINTR)
-				continue;
-			break;
-		}
-		off += (size_t)w;
-	}
-	dstr_clear(&j->out);
-}
-
-static void jmaybe(struct json_ctx *j)
-{
-	if (j->out.len >= (64u * 1024u))
-		jflush(j);
-}
+static void jflush(struct json_ctx *j) { asp_out_flush(&j->out, j->fd); }
+static void jmaybe(struct json_ctx *j) { asp_out_maybe(&j->out, j->fd); }
 
 /* RFC-8259 escaping (tree's json_encode; UTF-8 passes through byte-wise). */
 static void jenc(struct dstr *o, const char *s)
@@ -78,10 +61,7 @@ static void jenc(struct dstr *o, const char *s)
 
 static void jindent(struct json_ctx *j, int level)
 {
-	if (j->o->noindent)
-		return;
-	for (int i = 0; i <= level; i++)
-		dstr_appendz(&j->out, "    ");
+	asp_out_indent4(&j->out, level, j->o->noindent);
 }
 
 static void jfillinfo(struct json_ctx *j, const struct asp_statinfo *st)
