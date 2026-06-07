@@ -48,9 +48,9 @@ norm() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /; s/^usage: tree /usage: PROG
 #   --filelimit (root-as-over-limit-arg is the deferred SR-2.12 divergence, which
 #     a random root with >N entries hits constantly; re-add once 2.12 lands — the
 #     child filelimit path is already golden-covered and correct),
-#   --inodes/--device (SR-2.14: -J/-X emit LINK ino/dev where tree emits the
-#     TARGET's; random trees have symlinks, so re-add once 2.14 lands — unix-mode
-#     ino/dev is correct and golden-covered).
+#   --inodes/--device (DEVIATION D4: aspen's -J/-X print a symlink's OWN ino/dev;
+#     tree prints the target's, 0 for broken — the link-vs-target numbers differ
+#     with no fixed transform to normalize. Covered by golden %M + deviations.sh).
 #   (-f was excluded for SR-2.15; re-added now that -J/-X thread the full path.)
 # These are gated elsewhere (golden matrix, usage.sh, outfile.sh).
 FLAGPOOL="-a -d -f -i -l -x -s -h -p -u -g -D -F -Q -N -q -C -n -A -S -t -c -v -U -r \

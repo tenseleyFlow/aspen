@@ -70,6 +70,18 @@ elif ! grep -q 'caf%C3%A9' "$dv/h.o"; then
 	echo "DEVIATIONS D3: expected caf%C3%A9 in href, got:"; grep -oE 'href="[^"]*caf[^"]*"' "$dv/h.o" | head -1; fail=1
 fi
 
+# D4: a symlink's --inodes/--device is the link's OWN, in -J/-X — not tree's
+# target ino/dev (which is 0 for a broken link). brk -> nowhere is broken.
+ln -s nowhere "$dv/brk"
+"$ASP" -J --inodes --device "$dv" >"$dv/d4" 2>/dev/null
+_brk=$(grep -oE '"type":"link","name":"brk"[^}]*' "$dv/d4")
+case "$_brk" in
+	*'"inode":0'*|*'"dev":0'*)
+		echo "DEVIATIONS D4: broken-link -J inode/dev is 0 (regressed to tree's target stat): $_brk"; fail=1 ;;
+	*'"inode":'*) : ;; # has a non-zero inode -> the link's own, good
+	*) echo "DEVIATIONS D4: could not find brk link inode in -J output"; fail=1 ;;
+esac
+
 chmod -R u+rwx "$dv" 2>/dev/null || :
 rm -rf "$dv"
 
