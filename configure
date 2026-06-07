@@ -76,6 +76,22 @@ int main(void){ return dlopen("",0)!=0; }' '')" != 1 ]; then
 int main(void){ return dlopen("",0)!=0; }' '-ldl')" = 1 ] && NEED_LDL=1
 fi
 
+# Reentrant qsort: GNU/C23 signature (cmp last) on Linux/musl/FreeBSD-13+, BSD
+# signature (thunk first) on macOS/older BSD. Lets sort.c pass context instead of
+# file-scope globals; if neither, sort.c falls back to a single-thread static ctx.
+HAS_QSORT_R_GNU=$(try_compile qsort_r_gnu '
+#define _GNU_SOURCE
+#include <stdlib.h>
+static int c(const void*a,const void*b,void*x){(void)a;(void)b;(void)x;return 0;}
+int main(void){int v[1]={0}; qsort_r(v,1,sizeof v[0],c,(void*)0); return 0;}' '')
+HAS_QSORT_R_BSD=0
+if [ "$HAS_QSORT_R_GNU" != 1 ]; then
+	HAS_QSORT_R_BSD=$(try_compile qsort_r_bsd '
+#include <stdlib.h>
+static int c(void*x,const void*a,const void*b){(void)a;(void)b;(void)x;return 0;}
+int main(void){int v[1]={0}; qsort_r(v,1,sizeof v[0],(void*)0,c); return 0;}' '')
+fi
+
 # Pick the directory-read backend (Linux: getdents64; BSD/macOS: getdirentries; else readdir)
 DIR_BACKEND=readdir
 [ "$HAS_GETDIRENTRIES" = 1 ] && DIR_BACKEND=getdirentries
@@ -86,6 +102,8 @@ cat > config.h <<EOF
 #ifndef ASP_CONFIG_H
 #define ASP_CONFIG_H
 #define ASP_OS            "$uname_s"
+#define ASP_HAS_QSORT_R_GNU   $HAS_QSORT_R_GNU
+#define ASP_HAS_QSORT_R_BSD   $HAS_QSORT_R_BSD
 #define ASP_HAS_GETDENTS64    $HAS_GETDENTS64
 #define ASP_HAS_GETDIRENTRIES $HAS_GETDIRENTRIES
 #define ASP_HAS_D_TYPE        $HAS_D_TYPE

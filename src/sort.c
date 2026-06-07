@@ -2,21 +2,60 @@
 #include "util.h"
 #include "verscmp.h"
 #include "sys/xstat.h"
+#include "config.h"
 
 #include <locale.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* qsort isn't portably reentrant; the engine is single-threaded, so a file-scope
- * context set immediately before qsort is safe. */
-static const struct options *SO;
-/* C/POSIX collation == byte order, so strcoll there is just strcmp with locale
- * overhead on every call. Resolve once per sort and use strcmp when true. */
-static int SO_cc;
+/* Per-sort context, passed through qsort_r — no file-scope mutable state. */
+struct sortctx {
+	const struct options *o;
+	int cc;           /* C/POSIX collation == byte order, so strcmp suffices */
+	const char *keys; /* strxfrm key buffer base (keyed fast path), else NULL */
+};
 
-static int namecmp(const char *a, const char *b)
+/* Reentrant qsort. cmp is GNU/C23-style (a, b, ctx); we adapt the BSD signature
+ * (thunk first) with a trampoline, and fall back to a single-thread file-scope
+ * context only on a libc with no qsort_r at all (the engine never sorts
+ * concurrently, so that fallback is safe). */
+typedef int (*asp_cmp_fn)(const void *, const void *, void *);
+
+#if ASP_HAS_QSORT_R_GNU
+static void asp_qsort_r(void *b, size_t n, size_t sz, asp_cmp_fn cmp, void *ctx)
 {
-	return SO_cc ? strcmp(a, b) : strcoll(a, b);
+	qsort_r(b, n, sz, cmp, ctx);
+}
+#elif ASP_HAS_QSORT_R_BSD
+struct bsd_tramp {
+	asp_cmp_fn cmp;
+	void *ctx;
+};
+static int bsd_thunk(void *t, const void *a, const void *b)
+{
+	struct bsd_tramp *tr = t;
+	return tr->cmp(a, b, tr->ctx);
+}
+static void asp_qsort_r(void *b, size_t n, size_t sz, asp_cmp_fn cmp, void *ctx)
+{
+	struct bsd_tramp tr = { cmp, ctx };
+	qsort_r(b, n, sz, &tr, bsd_thunk);
+}
+#else
+static asp_cmp_fn g_cmp;
+static void *g_ctx;
+static int plain_thunk(const void *a, const void *b) { return g_cmp(a, b, g_ctx); }
+static void asp_qsort_r(void *b, size_t n, size_t sz, asp_cmp_fn cmp, void *ctx)
+{
+	g_cmp = cmp;
+	g_ctx = ctx;
+	qsort(b, n, sz, plain_thunk);
+}
+#endif
+
+static int namecmp(const struct sortctx *c, const char *a, const char *b)
+{
+	return c->cc ? strcmp(a, b) : strcoll(a, b);
 }
 
 static int dir_like(const struct entry *e)
@@ -24,10 +63,10 @@ static int dir_like(const struct entry *e)
 	return e->type == ASP_DIR || (e->type == ASP_LNK && e->ltype == ASP_DIR);
 }
 
-static int basecmp(const struct entry *a, const struct entry *b)
+static int basecmp(const struct sortctx *c, const struct entry *a, const struct entry *b)
 {
 	int v;
-	switch (SO->sort) {
+	switch (c->o->sort) {
 	case SORT_VERSION:
 		v = asp_verscmp(a->name, b->name);
 		break;
@@ -35,40 +74,41 @@ static int basecmp(const struct entry *a, const struct entry *b)
 		off_t sa = a->st ? a->st->size : 0, sb = b->st ? b->st->size : 0;
 		v = (sa == sb) ? 0 : (sa < sb ? 1 : -1); /* larger first, like tree */
 		if (v == 0)
-			v = namecmp(a->name, b->name);
+			v = namecmp(c, a->name, b->name);
 		break;
 	}
 	case SORT_MTIME: {
 		time_t ta = a->st ? a->st->mtime : 0, tb = b->st ? b->st->mtime : 0;
-		v = (ta == tb) ? namecmp(a->name, b->name) : (ta < tb ? -1 : 1);
+		v = (ta == tb) ? namecmp(c, a->name, b->name) : (ta < tb ? -1 : 1);
 		break;
 	}
 	case SORT_CTIME: {
 		time_t ta = a->st ? a->st->ctime : 0, tb = b->st ? b->st->ctime : 0;
-		v = (ta == tb) ? namecmp(a->name, b->name) : (ta < tb ? -1 : 1);
+		v = (ta == tb) ? namecmp(c, a->name, b->name) : (ta < tb ? -1 : 1);
 		break;
 	}
 	case SORT_NAME:
 	default:
-		v = namecmp(a->name, b->name);
+		v = namecmp(c, a->name, b->name);
 		break;
 	}
-	return SO->reverse ? -v : v;
+	return c->o->reverse ? -v : v;
 }
 
-static int cmp(const void *pa, const void *pb)
+static int cmp(const void *pa, const void *pb, void *vc)
 {
+	const struct sortctx *c = vc;
 	const struct entry *a = *(const struct entry *const *)pa;
 	const struct entry *b = *(const struct entry *const *)pb;
-	if (SO->dirsfirst || SO->filesfirst) {
+	if (c->o->dirsfirst || c->o->filesfirst) {
 		int da = dir_like(a), db = dir_like(b);
 		if (da != db) {
-			if (SO->dirsfirst)
+			if (c->o->dirsfirst)
 				return da ? -1 : 1;
 			return da ? 1 : -1; /* filesfirst */
 		}
 	}
-	return basecmp(a, b);
+	return basecmp(c, a, b);
 }
 
 /* True when collation is byte-order (C/POSIX): strcoll is already cheap there. */
@@ -83,21 +123,19 @@ struct keyed {
 	size_t koff; /* offset of this name's strxfrm key in the packed buffer */
 };
 
-static char *SO_keys; /* base of the packed key buffer, for keycmp */
-
-static int keycmp(const void *pa, const void *pb)
+static int keycmp(const void *pa, const void *pb, void *vc)
 {
+	const struct sortctx *c = vc;
 	const struct keyed *a = pa, *b = pb;
-	int v = strcmp(SO_keys + a->koff, SO_keys + b->koff);
-	return SO->reverse ? -v : v;
+	int v = strcmp(c->keys + a->koff, c->keys + b->koff);
+	return c->o->reverse ? -v : v;
 }
 
 void asp_sort(struct entry **v, size_t n, const struct options *o)
 {
 	if (o->sort == SORT_NONE) /* -U: unsorted, and disables the meta-sort */
 		return;
-	SO = o;
-	SO_cc = c_collate();
+	struct sortctx c = { o, c_collate(), NULL };
 
 	/* Fast path for the common case (plain name sort in a collating locale):
 	 * transform each name once with strxfrm, then sort keys with memcmp —
@@ -105,7 +143,7 @@ void asp_sort(struct entry **v, size_t n, const struct options *o)
 	 * Skipped for C/POSIX (strcoll is already byte compare) and when a
 	 * meta-sort needs the dir/file split. */
 	if (o->sort == SORT_NAME && !o->dirsfirst && !o->filesfirst && n > 1 &&
-	    !SO_cc) {
+	    !c.cc) {
 		struct keyed *k = asp_xmalloc(n * sizeof *k);
 		char *buf = NULL;
 		size_t cap = 0, off = 0;
@@ -131,15 +169,14 @@ void asp_sort(struct entry **v, size_t n, const struct options *o)
 			k[i].koff = off;
 			off += got + 1;
 		}
-		SO_keys = buf;
-		qsort(k, n, sizeof *k, keycmp);
+		c.keys = buf;
+		asp_qsort_r(k, n, sizeof *k, keycmp, &c);
 		for (size_t i = 0; i < n; i++)
 			v[i] = k[i].e;
-		SO_keys = NULL;
 		free(buf);
 		free(k);
 		return;
 	}
 
-	qsort(v, n, sizeof *v, cmp);
+	asp_qsort_r(v, n, sizeof *v, cmp, &c);
 }
