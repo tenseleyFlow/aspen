@@ -97,6 +97,14 @@ if [ -f tests/golden/cyclic.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# Adversarial regression fixtures (SR02-3.6): hostile inputs the security lens
+# survived (lone-backslash .gitignore, 64KB --fromfile line, ~600KB TREE_COLORS).
+if [ -f tests/golden/adversarial.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/adversarial.sh; then
+		fail=1
+	fi
+fi
+
 # Per-parser-flag golden coverage lint (SR-1.7): every flag has >=1 case.
 if [ -f tests/golden/flag_coverage.sh ]; then
 	if ! sh tests/golden/flag_coverage.sh; then
