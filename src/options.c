@@ -1,4 +1,5 @@
 #include "options.h"
+#include "charset.h"
 #include "util.h"
 #include "version.h"
 
@@ -208,9 +209,13 @@ static const char *long_val(char *a, const char *pfx, int *i, int argc, char **a
 		 * which keeps it (short_arg -> need_arg). Inline here so the two paths can
 		 * diverge in wording exactly like tree. */
 		if (*i + 1 >= argc) {
-			char buf[80];
-			snprintf(buf, sizeof buf, "Missing argument to %s", pfx);
-			die_msg(buf);
+			/* tree's bare "--charset" with no value also dumps the valid-charset
+			 * list (initlinedraw(true), tree.c:122) before exit — the "--charset="
+			 * empty form above does NOT (M2). */
+			fprintf(stderr, "%s: Missing argument to %s\n", ASP_PROGNAME, pfx);
+			if (strcmp(pfx, "--charset") == 0)
+				asp_charset_list(stderr);
+			exit(1);
 		}
 		return argv[++(*i)];
 	}

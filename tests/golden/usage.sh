@@ -64,6 +64,10 @@ chk "timefmt-noarg"   1 --timefmt
 chk "sort-noarg"      1 --sort
 chk "gitfile-noarg"   1 --gitfile
 
+# SR02-0.6 (L3): bare "--charset" (no value) also dumps the full valid-charset
+# list to stderr before exit 1 (tree's initlinedraw(true)); "--charset=" does not.
+chk "charset-noarg"   1 --charset
+
 # --version: aspen's own line, exit 0. Format-assert (not vs tree).
 "$ASP" --version >"$work/u.ver" 2>&1; vrc=$?
 if [ "$vrc" != 0 ]; then echo "USAGE: --version rc=$vrc (expected 0)"; fail=1; fi

@@ -47,7 +47,9 @@ static const char *n_win[] = {
 	"ISO-8859-1-Windows-3.1-Latin-1", "csWindows31Latin1",
 	"ISO-8859-2-Windows-Latin-2", "csWindows31Latin2", "windows-1250",
 	"windows-1251", "windows-1253", "windows-1254", "windows-1255",
-	"windows-1256", "windows-1257", NULL
+	/* tree's color.c lists "windows-1256" twice; reproduced verbatim so the
+	 * --charset valid-list output is byte-identical (harmless for name matching). */
+	"windows-1256", "windows-1256", "windows-1257", NULL
 };
 
 /* Most charsets use " [" for all five comment decorators (only UTF-8 differs). */
@@ -109,6 +111,20 @@ static const struct {
 static int is_utf8(const char *cs)
 {
 	return cs && (!strcasecmp(cs, "UTF-8") || !strcasecmp(cs, "utf8"));
+}
+
+void asp_charset_list(FILE *f)
+{
+	/* tree's initlinedraw(true): the header, then every name in every table row
+	 * (the trailing names==NULL fallback row is skipped), 2-space indented. */
+	fprintf(f, "Valid charsets include:\n");
+	for (size_t i = 0; i < NCS; i++) {
+		const char **s = cstable[i].names;
+		if (!s)
+			continue;
+		for (; *s; ++s)
+			fprintf(f, "  %s\n", *s);
+	}
 }
 
 const char *asp_charset_name(const struct options *o)

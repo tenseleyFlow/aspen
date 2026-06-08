@@ -11,6 +11,8 @@
 
 #include "options.h"
 
+#include <stdio.h>
+
 struct linedraw {
 	const char *vert[3];      /* continuing-ancestor glyph, by --compress level */
 	const char *vert_left[3]; /* branch (non-last entry) */
@@ -24,5 +26,10 @@ const struct linedraw *asp_linedraw(const struct options *o);
 /* Effective charset name: --charset/-S, then $TREE_CHARSET, then "UTF-8" in a
  * UTF-8 locale, else NULL. Used for the XML encoding attribute. */
 const char *asp_charset_name(const struct options *o);
+
+/* Print "Valid charsets include:" + every known charset name (2-space indented)
+ * to `f`, mirroring tree's initlinedraw(true). Used for the --charset missing-arg
+ * error. */
+void asp_charset_list(FILE *f);
 
 #endif /* ASP_CHARSET_H */
