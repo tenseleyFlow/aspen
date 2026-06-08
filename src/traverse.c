@@ -64,7 +64,16 @@ struct wctx {
 
 /* Threshold below which a level's deferred stats run inline — small levels
  * aren't worth the pool hand-off (~a few us vs ~1us per stat). */
-#define ASP_STAT_PAR_MIN 64
+/* Minimum deferred-stat batch to spawn/use the worker pool. Set ABOVE the spawn
+ * break-even, not at the point parallelism becomes merely possible: the 15-thread
+ * spawn (~45 thr_new + sigaction/umtx setup) only amortizes past a few hundred
+ * stats, so a lower value made the DEFAULT config lose to tree on the most common
+ * `-s ~/project` workload (one dir of 64-250 files) — a directive-#2 violation
+ * (audit A3). Below this, the walk stays on aspen's serial path, which already
+ * beats tree. Conservatively high so it never loses on the slow FreeBSD-compat
+ * dev box; faster platforms leave a little mid-size parallelism unused but still
+ * win serially. */
+#define ASP_STAT_PAR_MIN 384
 
 /* Push the current directory's .gitignore (c->path must be the dir path). */
 static struct ignorefile *push_dir_gitignore(struct wctx *c)
