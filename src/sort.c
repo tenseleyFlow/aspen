@@ -143,11 +143,74 @@ static int keycmp(const void *pa, const void *pb, void *vc)
 	return c->o->reverse ? -v : v;
 }
 
+/* MSD byte-radix sort of entry pointers by name (SR-3.1) — used only for the
+ * plain-name sort in a byte-order locale (strcoll == memcmp), where it beats
+ * qsort+strcmp several-fold on large directories. Names within a directory are
+ * unique, so radix's instability is irrelevant. Bucket 0 marks end-of-name
+ * (sorts before any byte, matching memcmp); real bytes occupy buckets 1..256. */
+static int radix_key(const struct entry *e, size_t d)
+{
+	return d < (size_t)e->namelen ? (unsigned char)e->name[d] + 1 : 0;
+}
+
+static void radix_msd(struct entry **a, struct entry **aux, size_t n, size_t depth)
+{
+	if (n < 2)
+		return;
+	if (n <= 24) { /* small subarray: bytewise insertion sort from depth */
+		for (size_t i = 1; i < n; i++) {
+			struct entry *x = a[i];
+			size_t j = i;
+			while (j > 0 && strcmp(a[j - 1]->name + depth, x->name + depth) > 0) {
+				a[j] = a[j - 1];
+				j--;
+			}
+			a[j] = x;
+		}
+		return;
+	}
+	size_t cnt[258];
+	memset(cnt, 0, sizeof cnt);
+	for (size_t i = 0; i < n; i++)
+		cnt[radix_key(a[i], depth) + 1]++;
+	for (int r = 1; r < 258; r++)
+		cnt[r] += cnt[r - 1];
+	size_t start[258];
+	memcpy(start, cnt, sizeof start); /* bucket starts (cnt is mutated below) */
+	for (size_t i = 0; i < n; i++) {
+		int k = radix_key(a[i], depth);
+		aux[cnt[k]++] = a[i];
+	}
+	memcpy(a, aux, n * sizeof *a);
+	for (int k = 1; k <= 256; k++) { /* recurse byte buckets; bucket 0 is <=1 entry */
+		size_t lo = start[k], hi = start[k + 1];
+		if (hi - lo > 1)
+			radix_msd(a + lo, aux + lo, hi - lo, depth + 1);
+	}
+}
+
 void asp_sort(struct entry **v, size_t n, const struct options *o)
 {
 	if (o->sort == SORT_NONE) /* -U: unsorted, and disables the meta-sort */
 		return;
 	struct sortctx c = { o, c_collate(), NULL };
+
+	/* Fastest path: plain-name sort in a byte-order locale -> MSD byte radix
+	 * (SR-3.1). Same order as memcmp/strcoll by construction; -r reverses the
+	 * ascending result (names are unique, so this is exact). The meta-sort
+	 * (dirs/files-first) keeps the comparator path. */
+	if (o->sort == SORT_NAME && c.cc && !o->dirsfirst && !o->filesfirst && n > 1) {
+		struct entry **aux = asp_xmalloc(n * sizeof *aux);
+		radix_msd(v, aux, n, 0);
+		free(aux);
+		if (o->reverse)
+			for (size_t i = 0, j = n - 1; i < j; i++, j--) {
+				struct entry *t = v[i];
+				v[i] = v[j];
+				v[j] = t;
+			}
+		return;
+	}
 
 	/* Fast path for the common case (plain name sort in a collating locale):
 	 * transform each name once with strxfrm, then sort keys with memcmp —
