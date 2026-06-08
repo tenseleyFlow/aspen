@@ -14,5 +14,3 @@ config.h
 /tests/.work/
 /bench/.work/
 *.core
-/bench/.work/pgo/
-/bench/.work/*.profdata

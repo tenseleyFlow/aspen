@@ -23,9 +23,11 @@ MANDIR   = $(DESTDIR)$(PREFIX)/share/man/man1
 
 WARN     = -Wall -Wextra -Wpedantic -Wstrict-prototypes -Wshadow -Wconversion -Wwrite-strings
 STD      = -std=c11
-CFLAGS  ?= -O2
+# OPT is the optimization level; release/debug override it cleanly (no stale -O2
+# left ahead of -O3/-O0). CFLAGS stays free for user-appended flags.
+OPT     ?= -O2
 # _FILE_OFFSET_BITS=64 matches tree's ABI so off_t/ino_t column widths agree on 32-bit too.
-ALL_CFLAGS = $(STD) $(WARN) $(CFLAGS) $(CONF_CFLAGS) -Isrc -I. -D_FILE_OFFSET_BITS=64
+ALL_CFLAGS = $(STD) $(WARN) $(OPT) $(CFLAGS) $(CONF_CFLAGS) -Isrc -I. -D_FILE_OFFSET_BITS=64
 LDLIBS  += $(LDLIBS_OPT)
 
 # Explicit source list — deterministic and faster to parse than $(wildcard),
@@ -82,10 +84,10 @@ asp: aspen
 %.o: %.c
 	$(CC) $(ALL_CFLAGS) -MMD -MP -c -o $@ $<
 
-release: ALL_CFLAGS += -O3 -flto -DNDEBUG
+release: OPT = -O3 -flto -DNDEBUG
 release: clean all
 
-debug: ALL_CFLAGS += -O0 -g -fsanitize=address,undefined
+debug: OPT = -O0 -g -fsanitize=address,undefined
 debug: LDFLAGS += -fsanitize=address,undefined
 debug: clean all
 
@@ -106,7 +108,7 @@ coverage:
 	@sh tests/coverage.sh
 
 fmt:
-	@command -v clang-format >/dev/null && clang-format -i $(SRC) src/*.h || echo "clang-format not found"
+	@command -v clang-format >/dev/null && clang-format -i $(SRC) src/*.h src/sys/*.h src/render/*.h || echo "clang-format not found"
 
 analyze:
 	@$(CC) $(ALL_CFLAGS) --analyze $(SRC) 2>&1 || true
