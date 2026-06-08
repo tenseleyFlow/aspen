@@ -58,8 +58,21 @@ chk "-s -P"     -s -P 'f01*'
 chk "--du -J"   --du -J
 chk "-s -X"     -s -X
 
+# SR02-2.8: --threads is aspen-only, so we parse it strictly — junk/garbage/out-of-
+# range is rejected (exit 1), unlike atoi's silent 0. 0 = auto; 1/8 valid.
+for bad in abc -1 1x 999999 ""; do
+	if "$ASP" --threads "$bad" "$big" >/dev/null 2>&1; then
+		echo "THREADS: --threads '$bad' accepted (should reject)"; fail=1
+	fi
+done
+for ok in 0 1 8; do
+	if ! "$ASP" --threads "$ok" "$big" >/dev/null 2>&1; then
+		echo "THREADS: --threads '$ok' rejected (should accept)"; fail=1
+	fi
+done
+
 if [ "$fail" -eq 0 ]; then
-	echo "THREADS: parallel stat is deterministic (--threads 1 == 16 == tree)"
+	echo "THREADS: parallel stat is deterministic (--threads 1 == 16 == tree); strict parse"
 else
 	exit 1
 fi
