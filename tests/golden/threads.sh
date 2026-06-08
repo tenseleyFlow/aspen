@@ -79,16 +79,19 @@ done
 # lazy pool is created). This is deterministic and host-independent — unlike counting
 # thread-creation syscalls, which can't distinguish the pool from libc/jemalloc
 # startup threads (those vary per host and made a raw-syscall delta flaky on CI).
+# Pin ASP_IO=threads (the documented pool selector) so this tests the POOL threshold
+# regardless of the ambient backend — under the ASP_IO=uring CI step the pool would
+# otherwise never spawn (io_uring backend) and the probe would be vacuous/wrong.
 dz="$work/threaddz"; rm -rf "$dz"; mkdir -p "$dz"
 i=0; while [ "$i" -lt 150 ]; do : > "$dz/f$i"; i=$((i + 1)); done
-# Default (auto) path: 150 < threshold, so the pool must stay serial.
-if ASP_TRACE_POOL=1 "$ASP" -s "$dz" 2>&1 >/dev/null | grep -q "stat-pool spawned"; then
-	echo "THREADS: default -s spawned the pool on a 150-file dir (< ASP_STAT_PAR_MIN dead zone; loses to tree — directive #2, audit A3)"; fail=1
+# Auto worker-count path: 150 < threshold, so the pool must stay serial.
+if ASP_IO=threads ASP_TRACE_POOL=1 "$ASP" -s "$dz" 2>&1 >/dev/null | grep -q "stat-pool spawned"; then
+	echo "THREADS: -s spawned the pool on a 150-file dir (< ASP_STAT_PAR_MIN dead zone; loses to tree — directive #2, audit A3)"; fail=1
 fi
 # Even with a pool explicitly requested, the 384 threshold must still gate 150 files
 # (--threads forces workers>1 regardless of this host's CPU count, so the check is
 # the threshold alone, not the auto worker-count decision).
-if ASP_TRACE_POOL=1 "$ASP" --threads 8 -s "$dz" 2>&1 >/dev/null | grep -q "stat-pool spawned"; then
+if ASP_IO=threads ASP_TRACE_POOL=1 "$ASP" --threads 8 -s "$dz" 2>&1 >/dev/null | grep -q "stat-pool spawned"; then
 	echo "THREADS: --threads 8 -s spawned the pool on a 150-file dir — the ASP_STAT_PAR_MIN threshold was bypassed (audit A3)"; fail=1
 fi
 # Positive control: above the threshold the lazy spawn MUST fire (forced threads, so
@@ -97,7 +100,7 @@ fi
 # the shared fixture's (drifting) entry count.
 up="$work/threadup"; rm -rf "$up"; mkdir -p "$up"
 i=0; while [ "$i" -lt 500 ]; do : > "$up/f$i"; i=$((i + 1)); done
-if ! ASP_TRACE_POOL=1 "$ASP" --threads 8 -s "$up" 2>&1 >/dev/null | grep -q "stat-pool spawned"; then
+if ! ASP_IO=threads ASP_TRACE_POOL=1 "$ASP" --threads 8 -s "$up" 2>&1 >/dev/null | grep -q "stat-pool spawned"; then
 	echo "THREADS: --threads 8 -s did NOT spawn the pool on a 500-file dir (> threshold — the lazy spawn should fire here)"; fail=1
 fi
 rm -rf "$dz" "$up"
