@@ -72,8 +72,21 @@ struct wctx {
  * (audit A3). Below this, the walk stays on aspen's serial path, which already
  * beats tree. Conservatively high so it never loses on the slow FreeBSD-compat
  * dev box; faster platforms leave a little mid-size parallelism unused but still
- * win serially. */
+ * win serially. Overridable at compile time (-DASP_STAT_PAR_MIN=N) so the break-even
+ * can be swept per platform. */
+#ifndef ASP_STAT_PAR_MIN
 #define ASP_STAT_PAR_MIN 384
+#endif
+
+/* Stats per worker when sizing the lazy pool. At spawn the worker count is capped to
+ * ceil(batch / this), so a just-over-threshold batch spawns ~2 threads instead of all
+ * N cores: a 384-entry dir was spawning 15 workers and losing to tree on syscall count
+ * (reaudit3 pool-boundary-syscall-blowup). Large batches still scale to the core count.
+ * Keep >= ... <= ASP_STAT_PAR_MIN so the threshold batch yields >= 2 workers. Overridable
+ * (-DASP_STAT_PER_WORKER=N) for sweeping. */
+#ifndef ASP_STAT_PER_WORKER
+#define ASP_STAT_PER_WORKER 256
+#endif
 
 /* Push the current directory's .gitignore (c->path must be the dir path). */
 static struct ignorefile *push_dir_gitignore(struct wctx *c)
@@ -389,7 +402,18 @@ static void statprov_batch(struct statprov *sp, int dirfd, struct entry **ents,
 	 * threshold (once — if creation fails we stay serial, no repeated attempts). */
 	if (sp->want_pool && n >= ASP_STAT_PAR_MIN) {
 		sp->want_pool = 0;
-		sp->pool = asp_pool_create(sp->workers);
+		/* Cap workers by this first-crossing batch: ceil(n / ASP_STAT_PER_WORKER),
+		 * never above the resolved core count. The 384-entry dir spawned all 15
+		 * cores and lost to tree on syscalls (reaudit3); ~2 workers there pays.
+		 * (The pool is sized once and reused, so a later much larger level keeps
+		 * this size — acceptable: the first level to cross the threshold is the
+		 * one whose spawn cost we must not waste.) */
+		int w = (int)((n + ASP_STAT_PER_WORKER - 1) / ASP_STAT_PER_WORKER);
+		if (w > sp->workers)
+			w = sp->workers;
+		if (w < 1)
+			w = 1;
+		sp->pool = asp_pool_create(w);
 		/* Deterministic self-report of the lazy spawn (gated; off by default, no
 		 * parity impact). Fires exactly when the pool is created — a pure function
 		 * of batch size vs threshold — so the dead-zone test can assert the pool
@@ -397,7 +421,7 @@ static void statprov_batch(struct statprov *sp, int dirfd, struct entry **ents,
 		 * apart from libc/jemalloc startup threads (which vary per host). */
 		if (sp->pool && getenv("ASP_TRACE_POOL"))
 			fprintf(stderr, "aspen: stat-pool spawned %d workers (batch=%zu)\n",
-				sp->workers, n);
+				w, n);
 	}
 	struct stat_job j = { dirfd, want_st, ents };
 	struct asp_pool *p = (sp->pool && n >= ASP_STAT_PAR_MIN) ? sp->pool : NULL;
