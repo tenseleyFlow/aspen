@@ -20,6 +20,7 @@
 void html_ctx_init(struct html_ctx *h, int fd, int mb_cur_max, const struct options *o)
 {
 	dstr_init(&h->out);
+	dstr_reserve(&h->out, ASP_OUT_FLUSH); /* avoid early realloc churn (SR-3.8) */
 	h->fd = fd;
 	h->mb_cur_max = mb_cur_max;
 	h->o = o;

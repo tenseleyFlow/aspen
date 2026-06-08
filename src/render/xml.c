@@ -18,6 +18,7 @@
 void xml_ctx_init(struct xml_ctx *x, int fd, const struct options *o)
 {
 	dstr_init(&x->out);
+	dstr_reserve(&x->out, ASP_OUT_FLUSH); /* avoid early realloc churn (SR-3.8) */
 	x->fd = fd;
 	x->o = o;
 	dstr_init(&x->fp);

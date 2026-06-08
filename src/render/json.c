@@ -16,6 +16,7 @@
 void json_ctx_init(struct json_ctx *j, int fd, const struct options *o)
 {
 	dstr_init(&j->out);
+	dstr_reserve(&j->out, ASP_OUT_FLUSH); /* avoid early realloc churn (SR-3.8) */
 	j->fd = fd;
 	j->o = o;
 	dstr_init(&j->fp);

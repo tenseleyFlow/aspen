@@ -19,6 +19,7 @@ void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max,
 		   const struct options *o, struct colorizer *col)
 {
 	dstr_init(&u->out);
+	dstr_reserve(&u->out, ASP_OUT_FLUSH); /* avoid early realloc churn (SR-3.8) */
 	u->fd = fd;
 	u->mb_cur_max = mb_cur_max;
 	u->np_flags = (o->quote ? NP_QUOTE : 0) | (o->noprint ? NP_NOPRINT : 0) |
