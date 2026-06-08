@@ -86,6 +86,7 @@ asp: aspen
 
 release: OPT = -O3 -flto -DNDEBUG
 release: clean all
+	@strip aspen asp 2>/dev/null || true   # smaller binary, marginally faster load (SR02-1.5)
 
 debug: OPT = -O0 -g -fsanitize=address,undefined
 debug: LDFLAGS += -fsanitize=address,undefined
