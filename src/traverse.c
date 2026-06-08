@@ -746,6 +746,9 @@ static void condense_prune_level(struct entry **arr, struct arena *a,
 /* --du: bottom-up size aggregation over the (post-prune) tree. Each directory's
  * displayed size becomes its own inode size plus the sum of its contents, like
  * tree (which accumulates into the dir's st_size). Returns this level's total. */
+/* off_t accumulation, exactly as tree does it. Overflow needs a subtree summing
+ * past OFF_MAX (~9 EiB on a 64-bit off_t) — not constructible on any real
+ * filesystem, so this matches tree on every reachable input (SR-4.7). */
 static off_t du_aggregate(struct entry **arr)
 {
 	off_t sum = 0;
