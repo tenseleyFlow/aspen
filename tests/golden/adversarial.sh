@@ -43,9 +43,11 @@ cmp_parity() {
 	fi
 }
 
-# 1) .gitignore whose last line is a lone backslash, after a longer line — the
-#    asp_gittrim trailing-backslash over-read (SR02-0.8). Both tools share the bug
-#    in-bounds and must emit identical output.
+# 1) .gitignore whose last line is a lone backslash — the asp_gittrim case
+#    (SR02-0.8 / audit R1). aspen now GUARDS the unescape so it is memory-safe and
+#    deterministic where tree reads out of bounds (excluded UB). On this benign
+#    fixture both produce a no-op pattern, so output still matches; the real
+#    memory-safety guard is the ASan-built filter_test unit (PATH_MAX-1 line).
 g="$adv/g"; mkdir -p "$g"; : > "$g/abcdefghij"; : > "$g/keep"; : > "$g/zzz"
 printf 'abcdefghij\n\\' > "$g/.gitignore"
 cmp_parity "gitignore-trailing-backslash" --gitignore "$g"

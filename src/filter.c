@@ -24,17 +24,18 @@ void asp_gittrim(char *s)
 			e--;
 	}
 	s[e + 1] = '\0';
-	/* Unescape '\'. NB: a line ending in a lone backslash makes this scan one byte
-	 * PAST the logical terminator (the `i++` skips the '\0', then s[i++] reads the
-	 * next byte). This is tree's own gittrim behaviour (SR02-0.8 / audit L5): it
-	 * stays within the caller's fgets'd PATH_MAX buffer — which is always
-	 * NUL-terminated from a prior read, so the scan halts in-bounds (ASan-clean) —
-	 * and, because aspen and tree share the same fixed-buffer fgets reuse, both
-	 * pick up the identical stale bytes and emit byte-identical output (verified on
-	 * trailing-backslash .gitignore fixtures). Reproduced deliberately, NOT a
-	 * deviation: "fixing" it would stop at the NUL and diverge from tree. */
+	/* Unescape '\'. Guard the skip so a line ending in a LONE backslash does not run
+	 * the scan past the terminator: tree's gittrim does `i++; s[i]` unconditionally,
+	 * which on a PATH_MAX-1 line reads one byte past its fixed buffer — a genuine
+	 * out-of-bounds read (ASan: stack-buffer-overflow), undefined and dependent on
+	 * stale stack bytes. aspen does NOT copy that: with `s[i+1]` checked, a trailing
+	 * backslash is kept verbatim and the scan halts in bounds, so aspen is
+	 * memory-safe and deterministic where tree is UB. This is the excluded-UB
+	 * category (like the lstat race), not a numbered deviation — see deviations.md;
+	 * a trailing-backslash .gitignore line is itself malformed (an escape with
+	 * nothing to escape), so there is no single right answer to match. */
 	for (i = e = 0; s[i] != '\0';) {
-		if (s[i] == '\\')
+		if (s[i] == '\\' && s[i + 1] != '\0')
 			i++;
 		s[e++] = s[i++];
 	}
