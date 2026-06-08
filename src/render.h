@@ -10,6 +10,8 @@
 
 #include "traverse.h"
 
+struct options;
+
 /* Line-oriented renderers (unix, html): the engine walks the sorted DFS and calls
  * these as it goes. The error/newline split lets a failed mid-tree directory
  * append "  [error opening dir]" before the newline, exactly like tree. */
@@ -18,7 +20,9 @@ struct line_renderer {
 	void (*root)(void *ctx, const char *path, const char *err,
 		     const struct asp_statinfo *st);    /* root line; err!=NULL appended as "  [err]" */
 	void (*entry)(void *ctx, const struct entry *e, const char *path,
-		      int depth, int is_last);          /* indent + name + link, NO newline */
+		      int depth, int is_last, int rd);    /* indent + name + link, NO newline.
+		      rd = tree's descend+htmldescend composite: 0 file, 1 descended dir,
+		      >=2 a -R level boundary (html appends "/00Tree.html"). */
 	void (*error)(void *ctx, const char *msg);      /* "  [<msg>]" */
 	void (*newline)(void *ctx);
 	void (*comment)(void *ctx, const struct entry *e, int depth); /* --info lines after the entry */
@@ -45,6 +49,10 @@ struct tree_renderer {
 struct renderer {
 	const struct line_renderer *line;
 	const struct tree_renderer *tree;
+	/* -R "rerun": at a -L level boundary, re-render `path`'s subtree as a fresh
+	 * document written to `path`/00Tree.html (tree's setoutput+emit_tree). Set for
+	 * the line renderers (unix text, html); NULL for json/xml (no rerun there). */
+	void (*rerun)(void *ctx, const char *path, const struct options *o);
 };
 
 /* Orchestrate over the root list: begin, per-root walk, report, end.

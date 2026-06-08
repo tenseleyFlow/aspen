@@ -326,6 +326,12 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 	defer->n = 0;
 
 	while ((r = asp_dirread(d, &de)) == 1) {
+		/* -H: tree's read_dir unconditionally hides any "00Tree.html" entry in
+		 * HTML mode (tree.c:898) so the -R generated files never list themselves
+		 * (and a pre-existing one stays hidden). Applies even without -R. */
+		if (o->format == OUT_HTML && de.name[0] == '0' &&
+		    !strcmp(de.name, "00Tree.html"))
+			continue;
 		if (!o->all && de.name[0] == '.')
 			continue;
 
@@ -526,6 +532,11 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		asp_pool_for(c->prefetch, n, prefetch_one, &pj);
 	}
 
+	/* -R: tree's htmldescend is per-listing state (list.c:148) — 0 until the
+	 * first descend-eligible dir is stopped by the -L boundary, then sticky at 10
+	 * for every following sibling (even plain files inherit "/00Tree.html"). */
+	int htmldescend = 0;
+
 	for (size_t i = 0; i < n; i++) {
 		struct entry *e = vec[i];
 		int is_last = (i + 1 == n);
@@ -541,9 +552,9 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		else
 			c->tot->files++;
 
-		c->r->line->entry(c->rctx, e, c->path.data, depth, is_last);
-
-		/* descent decision */
+		/* Descent decision is computed BEFORE the entry is emitted (tree calls
+		 * printfile with the resolved descend+htmldescend), so the renderer knows
+		 * whether this is a normal dir, a -R boundary, or a plain entry. */
 		int descend = 0;
 		const char *post_err = NULL;
 		if (e->type == ASP_DIR)
@@ -551,9 +562,16 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		else if (o->follow && e->type == ASP_LNK && e->ltype == ASP_DIR)
 			descend = 1;
 
-		if (descend && o->level >= 0 && depth >= o->level)
-			descend = 0;
 		if (descend && o->xdev && e->type == ASP_DIR && e->dev != c->root_dev)
+			descend = 0;
+
+		/* -R: an otherwise-eligible dir stopped by the -L limit is re-rendered into
+		 * <path>/00Tree.html and flips htmldescend sticky (tree list.c:209). */
+		if (descend && o->rerun && o->level >= 0 && depth >= o->level && c->r->rerun) {
+			c->r->rerun(c->rctx, c->path.data, o);
+			htmldescend = 10;
+		}
+		if (descend && o->level >= 0 && depth >= o->level)
 			descend = 0;
 		if (descend && o->follow) {
 			/* tree marks only a SYMLINK "recursive, not followed" when its target's
@@ -571,6 +589,9 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 				inoset_add(&c->seen, e->ino, e->dev);
 			}
 		}
+
+		c->r->line->entry(c->rctx, e, c->path.data, depth, is_last,
+				  descend + htmldescend);
 
 		if (descend) {
 			struct asp_dir *cd;
@@ -809,6 +830,9 @@ static void emit_level(struct wctx *c, struct entry **arr, int depth)
 		n++;
 	asp_sort(arr, n, o);
 
+	/* -R sticky htmldescend, mirroring walk_dir / tree list.c:148. */
+	int htmldescend = 0;
+
 	for (size_t i = 0; i < n; i++) {
 		struct entry *e = arr[i];
 		int is_last = (i + 1 == n);
@@ -827,7 +851,19 @@ static void emit_level(struct wctx *c, struct entry **arr, int depth)
 		else
 			c->tot->files++;
 
-		c->r->line->entry(c->rctx, e, c->path.data, depth, is_last);
+		/* -R: a dir_like with no children (->child NULL, no error) stopped at the
+		 * -L boundary (not xdev-excluded) is re-rendered into <path>/00Tree.html;
+		 * a descended dir keeps ->child (empty dirs get a non-NULL empty array). */
+		int rd_descend = (e->child != NULL) ? 1 : 0;
+		if (dir_like && !e->child && !e->err && o->rerun && o->level >= 0 &&
+		    depth >= o->level &&
+		    !(o->xdev && e->type == ASP_DIR && e->dev != c->root_dev) && c->r->rerun) {
+			c->r->rerun(c->rctx, c->path.data, o);
+			htmldescend = 10;
+		}
+
+		c->r->line->entry(c->rctx, e, c->path.data, depth, is_last,
+				  rd_descend + htmldescend);
 
 		if (e->child) {
 			c->r->line->newline(c->rctx);

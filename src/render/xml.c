@@ -315,4 +315,4 @@ static void xml_tree(void *ctx, const char *rootpath, const struct asp_statinfo 
 static const struct tree_renderer xml_vt = {
 	xml_begin, xml_tree, xml_report, xml_end,
 };
-const struct renderer asp_xml_renderer = { NULL, &xml_vt };
+const struct renderer asp_xml_renderer = { NULL, &xml_vt, NULL };

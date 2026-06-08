@@ -10,6 +10,8 @@
 #include "version.h"
 
 #include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -121,7 +123,9 @@ static const char *cls(enum asp_type t, int isexe)
 }
 
 /* Emit the <a ...>name</a> for an entry. dirname/filename per tree's
- * html_printfile; descend: 1 for a directory, 0 otherwise (no -R). */
+ * html_printfile; descend is tree's descend+htmldescend composite: 0 plain
+ * entry, 1 a normal directory (trailing "/"), >=2 a -R level boundary whose
+ * href points at the generated "<dir>/00Tree.html" instead. */
 static void anchor(struct html_ctx *h, const struct entry *e, const char *dirname,
 		   size_t dirlen, const char *filename, int isdir, int descend)
 {
@@ -155,7 +159,9 @@ static void anchor(struct html_ctx *h, const struct entry *e, const char *dirnam
 				dstr_appendc(&h->out, '/');
 			asp_url_encode(&h->out, filename);
 		}
-		if (isdir && descend < 2)
+		if (descend > 1)
+			dstr_appendz(&h->out, "/00Tree.html");
+		else if (isdir && descend < 2)
 			dstr_appendc(&h->out, '/');
 		dstr_appendc(&h->out, '"');
 	}
@@ -252,7 +258,8 @@ static void html_root(void *ctx, const char *path, const char *err, const struct
 	hmaybe(h);
 }
 
-static void html_entry(void *ctx, const struct entry *e, const char *path, int depth, int is_last)
+static void html_entry(void *ctx, const struct entry *e, const char *path, int depth,
+		       int is_last, int rd)
 {
 	struct html_ctx *h = ctx;
 	const struct options *o = h->o;
@@ -274,8 +281,7 @@ static void html_entry(void *ctx, const struct entry *e, const char *path, int d
 	size_t plen = strlen(path);
 	size_t dirlen = plen - nmlen - 1;
 	const char *filename = o->fullpath ? path : nm;
-	int descend = dir_like ? 1 : 0;
-	anchor(h, e, path, dirlen, filename, dir_like, descend);
+	anchor(h, e, path, dirlen, filename, dir_like, rd);
 	hmaybe(h);
 }
 
@@ -319,8 +325,29 @@ static void html_report(void *ctx, const struct totals *t)
 	dstr_appendz(&h->out, "\n</p>\n");
 }
 
+/* -R: render `path`'s subtree as a self-contained HTML document into
+ * <path>/00Tree.html (tree's setoutput()+emit_tree()). Open failures are
+ * silent — tree's fopen failure leaves the listing unchanged. */
+static void html_rerun(void *ctx, const char *path, const struct options *o)
+{
+	struct html_ctx *parent = ctx;
+	char out[PATH_MAX];
+	int n = snprintf(out, sizeof out, "%s/00Tree.html", path);
+	if (n < 0 || (size_t)n >= sizeof out)
+		return;
+	int fd = open(out, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	if (fd < 0)
+		return;
+	struct html_ctx sub;
+	html_ctx_init(&sub, fd, parent->mb_cur_max, o);
+	const char *roots[2] = { path, NULL };
+	render_tree(roots, o, &asp_html_renderer, &sub, NULL);
+	html_ctx_destroy(&sub);
+	close(fd);
+}
+
 static const struct line_renderer html_vt = {
 	html_begin, html_root, html_entry, html_error, html_newline, html_comment,
 	html_report, html_end,
 };
-const struct renderer asp_html_renderer = { &html_vt, NULL };
+const struct renderer asp_html_renderer = { &html_vt, NULL, html_rerun };

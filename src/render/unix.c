@@ -9,6 +9,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -252,10 +253,11 @@ static void ux_root(void *ctx, const char *path, const char *err, const struct a
 }
 
 static void ux_entry(void *ctx, const struct entry *e, const char *path,
-		     int depth, int is_last)
+		     int depth, int is_last, int rd)
 {
 	struct unix_ctx *u = ctx;
 	const struct options *o = u->o;
+	(void)rd; /* the text renderer has no per-boundary href; -R only writes files */
 
 	if (o->metafirst) {
 		emit_info(u, e->st);
@@ -368,7 +370,29 @@ static void ux_end(void *ctx)
 	flush_all((struct unix_ctx *)ctx);
 }
 
+/* -R: tree writes 00Tree.html into every dir past the -L limit regardless of
+ * output format (list.c's recursion is format-blind), so the text renderer
+ * re-renders the subtree as text into <path>/00Tree.html too. The colorizer is
+ * read-only during a render and safely shared with the sub-render. */
+static void ux_rerun(void *ctx, const char *path, const struct options *o)
+{
+	struct unix_ctx *parent = ctx;
+	char out[PATH_MAX];
+	int n = snprintf(out, sizeof out, "%s/00Tree.html", path);
+	if (n < 0 || (size_t)n >= sizeof out)
+		return;
+	int fd = open(out, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	if (fd < 0)
+		return;
+	struct unix_ctx sub;
+	unix_ctx_init(&sub, fd, parent->mb_cur_max, o, parent->col);
+	const char *roots[2] = { path, NULL };
+	render_tree(roots, o, &asp_unix_renderer, &sub, NULL);
+	unix_ctx_destroy(&sub);
+	close(fd);
+}
+
 static const struct line_renderer unix_vt = {
 	ux_begin, ux_root, ux_entry, ux_error, ux_newline, ux_comment, ux_report, ux_end,
 };
-const struct renderer asp_unix_renderer = { &unix_vt, NULL };
+const struct renderer asp_unix_renderer = { &unix_vt, NULL, ux_rerun };

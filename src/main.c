@@ -53,17 +53,18 @@ static void dbg_error(void *c, const char *m) { (void)c; (void)m; }
 static void dbg_newline(void *c) { (void)c; }
 static void dbg_comment(void *c, const struct entry *e, int d) { (void)c; (void)e; (void)d; }
 static void dbg_report(void *c, const struct totals *t) { (void)c; (void)t; }
-static void dbg_entry(void *c, const struct entry *e, const char *path, int depth, int last)
+static void dbg_entry(void *c, const struct entry *e, const char *path, int depth, int last, int rd)
 {
 	(void)c;
 	(void)depth;
 	(void)last;
+	(void)rd;
 	printf("%c\t%s\n", type_char((enum asp_type)e->type), path);
 }
 static const struct line_renderer DEBUG_VT = {
 	dbg_noop, dbg_root, dbg_entry, dbg_error, dbg_newline, dbg_comment, dbg_report, dbg_noop,
 };
-static const struct renderer DEBUG_RENDERER = { &DEBUG_VT, NULL };
+static const struct renderer DEBUG_RENDERER = { &DEBUG_VT, NULL, NULL };
 
 int main(int argc, char **argv)
 {
