@@ -52,12 +52,22 @@ int asp_psize(char *buf, size_t bufsz, const struct options *o, off_t size)
 const char *asp_do_date(const struct options *o, time_t t)
 {
 	static char buf[256];
-	struct tm *tm = localtime(&t);
+	struct tm tmbuf;
+	struct tm *tm = localtime_r(&t, &tmbuf); /* stack tm, no shared static */
+	if (!tm)
+		return "";
 	if (o->timefmt) {
 		strftime(buf, 255, o->timefmt, tm);
 		buf[255] = '\0';
 	} else {
-		time_t now = time(NULL);
+		/* tree computes the reference "now" once for the whole run; cache it so
+		 * the recent/old branch costs no time() syscall per entry. */
+		static time_t now;
+		static int have_now;
+		if (!have_now) {
+			now = time(NULL);
+			have_now = 1;
+		}
 		if (t > now || (t + SIXMONTHS) < now)
 			strftime(buf, 255, "%b %e  %Y", tm);
 		else
