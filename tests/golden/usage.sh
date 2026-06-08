@@ -55,6 +55,15 @@ chk "compress-empty"  1 --compress=
 chk "filelimit-empty" 1 --filelimit=
 chk "timefmt-empty"   1 --timefmt=
 
+# SR02-0.5 (M3): a long option's missing-arg message is "Missing argument to --opt"
+# with NO " option." suffix (the short-flag form keeps it). --charset adds the
+# valid-charset list (SR02-0.6) and is covered separately.
+chk "compress-noarg"  1 --compress
+chk "filelimit-noarg" 1 --filelimit
+chk "timefmt-noarg"   1 --timefmt
+chk "sort-noarg"      1 --sort
+chk "gitfile-noarg"   1 --gitfile
+
 # --version: aspen's own line, exit 0. Format-assert (not vs tree).
 "$ASP" --version >"$work/u.ver" 2>&1; vrc=$?
 if [ "$vrc" != 0 ]; then echo "USAGE: --version rc=$vrc (expected 0)"; fail=1; fi

@@ -203,9 +203,16 @@ static const char *long_val(char *a, const char *pfx, int *i, int argc, char **a
 		return a + len + 1;
 	}
 	if (a[len] == '\0') {
-		char buf[80];
-		snprintf(buf, sizeof buf, "%s", pfx);
-		return need_arg(i, argc, argv, buf);
+		/* tree's long-option missing-arg message is "Missing argument to <pfx>"
+		 * with NO " option." suffix (tree.c:121) — unlike the short-flag form,
+		 * which keeps it (short_arg -> need_arg). Inline here so the two paths can
+		 * diverge in wording exactly like tree. */
+		if (*i + 1 >= argc) {
+			char buf[80];
+			snprintf(buf, sizeof buf, "Missing argument to %s", pfx);
+			die_msg(buf);
+		}
+		return argv[++(*i)];
 	}
 	return NULL; /* a longer flag that merely shares this prefix */
 }
