@@ -107,6 +107,23 @@ if ! diff -q "$dv/d5g" "$dv/d5s" >/dev/null 2>&1; then
 fi
 "$ASP" --filelimit2 "$dv/pq" >/dev/null 2>&1 && { echo "DEVIATIONS D5: --filelimit2 accepted (should reject exact-match)"; fail=1; }
 
+# D6: -R generated nested 00Tree.html files are self-indented correctly. tree
+# leaks the parent walk's global dirs[] state into the nested document, drawing a
+# guide (│) for an ancestor absent from that file and dropping the entry's own
+# ├──/└── marker (visible at -L >= 2). aspen renders each 00Tree.html standalone.
+# Fixture: a/{aa/{aaa,f2}, ab} — aa is a -L2 boundary WITH a sibling (ab), so
+# tree's leftover dirs[] is non-zero and its bug fires.
+r6="$dv/rr"; rm -rf "$r6"; mkdir -p "$r6/a/aa/aaa" "$r6/a/ab" "$r6/z"; : > "$r6/a/aa/f2"
+asp_abs=$(cd "$(dirname "$ASP")" && pwd)/$(basename "$ASP")
+( cd "$r6" && "$asp_abs" -H X -R -L 2 . >/dev/null 2>&1 )
+nf6="$r6/a/aa/00Tree.html"
+if [ ! -f "$nf6" ]; then
+	echo "DEVIATIONS D6: -R did not generate the nested $nf6"; fail=1
+elif ! grep -q '├' "$nf6"; then
+	echo "DEVIATIONS D6: nested 00Tree.html lost its ├── branch marker (regressed to tree's dangling │ guide)"
+	grep -nE 'aaa|f2' "$nf6" | sed -n '1,4p'; fail=1
+fi
+
 chmod -R u+rwx "$dv" 2>/dev/null || :
 rm -rf "$dv"
 

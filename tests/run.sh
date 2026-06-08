@@ -81,6 +81,14 @@ if [ -f tests/golden/outfile.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# -R 00Tree.html generation parity (SR02-0.1): the generated per-dir files match
+# tree's, which the stdout-only golden matrix can't see.
+if [ -f tests/golden/rerun.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/rerun.sh; then
+		fail=1
+	fi
+fi
+
 # Per-parser-flag golden coverage lint (SR-1.7): every flag has >=1 case.
 if [ -f tests/golden/flag_coverage.sh ]; then
 	if ! sh tests/golden/flag_coverage.sh; then

@@ -42,7 +42,10 @@ norm() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /; s/^usage: tree /usage: PROG
 # Well-formed, parity-safe flags to fuzz freely — the fuzzer targets walk/render
 # output parity, so flags must be VALID forms (malformed-CLI parser quirks are
 # tracked separately in SR-2.13). Excluded on purpose:
-#   -R (writes 00Tree.html into the tree), -o (writes a file / empties stdout),
+#   -R (implemented, but writes 00Tree.html INTO the corpus mid-walk: running
+#     aspen then tree on the same tree would have tree's text-mode run list the
+#     files aspen just wrote, and -R+--du size is nondeterministic (D6). Covered
+#     by golden -R cases + deviations.sh D6), -o (writes a file / empties stdout),
 #   -H/-T (HTML embeds aspen's own name+version), --help/--version (not a walk),
 #   -P/-I (need a separate pattern arg; pattern matching is golden-covered),
 #   --filelimit (SR-2.12 landed, but a random root over the limit still deviates:
