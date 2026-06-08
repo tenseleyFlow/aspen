@@ -98,6 +98,22 @@ if [ -f tests/golden/PARITY_ACTIVE ] && [ -x "$ASP" ]; then
 			hyperfine -N -w 5 -r 30 --export-csv "$csv" \
 				"$ASP $work/$cls" "$REF -n $work/$cls" >/dev/null 2>&1 || continue
 			gate_csv "$csv" "class:$cls"
+
+			# reaudit3: also gate the STAT path. -s forces a stat per entry, so
+			# aspen's d_type trick can't help — historically the class most prone to
+			# tie/lose, and the per-shape gate was blind to it (only `default`). Use
+			# the min metric (best run = compute cost, robust to runner load) so a
+			# genuine regression fails without flapping on noise. deep -s is EXCLUDED:
+			# it's the known cold-marginal single-wide-chain shape, tracked for a
+			# quiet-box fix (task 79); the warm flat/wide stat wins are solid.
+			case "$cls" in
+			deep) ;;
+			*)	scsv="$work/cls-$cls-s.csv"
+				if hyperfine -N -w 5 -r 30 --export-csv "$scsv" \
+					"$ASP -s $work/$cls" "$REF -n -s $work/$cls" >/dev/null 2>&1; then
+					sh bench/gate.sh "$scsv" min "class:$cls:-s" || rc=1
+				fi ;;
+			esac
 		done
 	fi
 else

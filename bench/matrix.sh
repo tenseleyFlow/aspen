@@ -9,7 +9,8 @@
 # Usage:
 #   sh bench/matrix.sh MACHINE_LABEL [PLAN]
 #     PLAN = warm (default) | cold | all
-#   env: REAL=1  also clone+bench a real repo (the Linux kernel, shallow)
+#   env: REAL=1  also clone+bench a real repo (postgres/postgres ~8k files, shallow;
+#                this is the corpus behind README's "real-world — PostgreSQL" row)
 #        HF=<path to hyperfine>   REPS=<n>  WARMUP=<n>
 #        SUDO_DROP="sudo sh -c 'sync; echo 3 >/proc/sys/vm/drop_caches'"  (cold)
 #
@@ -50,7 +51,7 @@ gen() { # shape builder
 	      while [ "$i" -lt 400 ]; do p="$p/d"; mkdir -p "$p"; i=$((i+1)); done; : > "$p/leaf" ;;
 	mixed) d=$C/mixed; [ -d "$d" ] && return; sh bench/mkcorpus.sh "$d" 100 50 40 >/dev/null ;;
 	real) d=$C/real; [ -d "$d/.git" ] && return; rm -rf "$d"
-	      git clone --depth 1 -q https://github.com/torvalds/linux "$d" 2>/dev/null || { echo "real clone failed"; return 1; } ;;
+	      git clone --depth 1 -q https://github.com/postgres/postgres "$d" 2>/dev/null || { echo "real clone failed"; return 1; } ;;
 	esac
 }
 entries() { find "$1" 2>/dev/null | wc -l | tr -d ' '; }
