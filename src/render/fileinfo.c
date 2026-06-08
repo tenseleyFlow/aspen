@@ -57,8 +57,8 @@ const char *asp_do_date(const struct options *o, time_t t)
 	if (!tm)
 		return "";
 	if (o->timefmt) {
-		strftime(buf, 255, o->timefmt, tm);
-		buf[255] = '\0';
+		strftime(buf, sizeof buf - 1, o->timefmt, tm);
+		buf[sizeof buf - 1] = '\0';
 	} else {
 		/* tree computes the reference "now" once for the whole run; cache it so
 		 * the recent/old branch costs no time() syscall per entry. */
@@ -69,9 +69,9 @@ const char *asp_do_date(const struct options *o, time_t t)
 			have_now = 1;
 		}
 		if (t > now || (t + SIXMONTHS) < now)
-			strftime(buf, 255, "%b %e  %Y", tm);
+			strftime(buf, sizeof buf - 1, "%b %e  %Y", tm);
 		else
-			strftime(buf, 255, "%b %e %R", tm);
+			strftime(buf, sizeof buf - 1, "%b %e %R", tm);
 	}
 	return buf;
 }

@@ -9,6 +9,8 @@
 #include "options.h"
 #include "render.h"
 
+#include <limits.h>
+
 struct unix_ctx {
 	struct dstr out;
 	int fd;
@@ -21,7 +23,7 @@ struct unix_ctx {
 	int hyper;
 	const char *scheme;
 	char authority[256];
-	char realbase[4096];
+	char realbase[PATH_MAX]; /* realpath() result; needs >= PATH_MAX */
 	size_t pathoffset;
 	unsigned char *last; /* last[depth] = is_last; grows on demand */
 	size_t last_cap;

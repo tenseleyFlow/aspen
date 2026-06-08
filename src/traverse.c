@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -197,7 +198,7 @@ static int pat_match_any(const char **pats, size_t n, const char *name, int isdi
 
 static void fill_link(struct wctx *c, int dirfd, struct entry *e)
 {
-	char buf[4096];
+	char buf[PATH_MAX]; /* a symlink target is bounded by PATH_MAX */
 	ssize_t n = readlinkat(dirfd, e->name, buf, sizeof buf - 1);
 	if (n < 0) {
 		e->lnk = arena_strdup(&c->arena, "[Error reading symbolic link information]");
@@ -1007,7 +1008,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	if (o->gitignore) {
 		const char *gd = getenv("GIT_DIR");
 		if (gd) {
-			char ex[4096];
+			char ex[PATH_MAX + sizeof "/info/exclude"]; /* GIT_DIR path + suffix */
 			snprintf(ex, sizeof ex, "%s/info/exclude", gd);
 			gitstack_push(&c.fstack, gitignore_load_file(gd, ex));
 		}
