@@ -65,8 +65,10 @@ within a few percent). All synthetic corpora are deterministic and rebuildable.
 | **deep** — a 400-level chain (syscall-bound) | 2.5× | 1.6× |
 | **real-world** — PostgreSQL source (~8k files)² | 1.9× | — |
 
-The advantage **scales with tree size**: a small real project tree (~8k files) sits near the
-process-startup floor (~1.9×), while large trees reach ~5×.
+The advantage **scales with tree size**. At the genuine process-startup floor — an empty or
+tiny tree, or `--version` — aspen is a **tie** with `tree` (~1.0–1.1×, within noise): it issues
+marginally fewer syscalls, but process startup dominates and there's almost nothing to walk. The
+~1.9× above is already an ~8k-file project (startup is amortized there), and large trees reach ~5×.
 
 ### The honest nuance — speedup depends on whether a flag forces `stat`
 

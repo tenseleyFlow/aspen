@@ -707,9 +707,12 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		int descend = decide_descent(c, e, depth, &post_err, &at_boundary);
 
 		/* -R: an eligible dir stopped by the -L limit is re-rendered into
-		 * <path>/00Tree.html and flips htmldescend sticky (tree list.c:209). */
+		 * <path>/00Tree.html and flips htmldescend sticky (tree list.c:209). A
+		 * write failure (unwritable dir) is an I/O error -> exit 2 (D1), unlike
+		 * tree's mid-stream exit-1; aspen completes the render first. */
 		if (at_boundary && o->rerun && c->r->rerun) {
-			c->r->rerun(c->rctx, c->path.data, o);
+			if (c->r->rerun(c->rctx, c->path.data, o) < 0)
+				(*c->errors)++;
 			htmldescend = 10;
 		}
 
@@ -977,7 +980,8 @@ static void emit_level(struct wctx *c, struct entry **arr, int depth)
 		if (dir_like && !e->child && !e->err && o->rerun && o->level >= 0 &&
 		    depth >= o->level &&
 		    !(o->xdev && e->type == ASP_DIR && e->dev != c->root_dev) && c->r->rerun) {
-			c->r->rerun(c->rctx, c->path.data, o);
+			if (c->r->rerun(c->rctx, c->path.data, o) < 0)
+				(*c->errors)++; /* unwritable 00Tree.html target -> exit 2 (D1) */
 			htmldescend = 10;
 		}
 

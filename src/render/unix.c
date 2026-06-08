@@ -387,22 +387,23 @@ static void ux_end(void *ctx)
  * output format (list.c's recursion is format-blind), so the text renderer
  * re-renders the subtree as text into <path>/00Tree.html too. The colorizer is
  * read-only during a render and safely shared with the sub-render. */
-static void ux_rerun(void *ctx, const char *path, const struct options *o)
+static int ux_rerun(void *ctx, const char *path, const struct options *o)
 {
 	struct unix_ctx *parent = ctx;
 	char out[PATH_MAX];
 	int n = snprintf(out, sizeof out, "%s/00Tree.html", path);
 	if (n < 0 || (size_t)n >= sizeof out)
-		return;
+		return -1;
 	int fd = open(out, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 	if (fd < 0)
-		return;
+		return -1; /* I/O failure -> the caller exits 2 (D1) */
 	struct unix_ctx sub;
 	unix_ctx_init(&sub, fd, parent->mb_cur_max, o, parent->col);
 	const char *roots[2] = { path, NULL };
 	render_tree(roots, o, &asp_unix_renderer, &sub, NULL);
 	unix_ctx_destroy(&sub);
 	close(fd);
+	return 0;
 }
 
 static const struct line_renderer unix_vt = {

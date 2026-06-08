@@ -61,7 +61,9 @@ struct renderer {
 	/* -R "rerun": at a -L level boundary, re-render `path`'s subtree as a fresh
 	 * document written to `path`/00Tree.html (tree's setoutput+emit_tree). Set for
 	 * the line renderers (unix text, html); NULL for json/xml (no rerun there). */
-	void (*rerun)(void *ctx, const char *path, const struct options *o);
+	/* Returns 0 on success, -1 if the <path>/00Tree.html target could not be
+	 * opened — the caller flags it as an I/O error (exit 2, per deviation D1). */
+	int (*rerun)(void *ctx, const char *path, const struct options *o);
 };
 
 /* Orchestrate over the root list: begin, per-root walk, report, end.

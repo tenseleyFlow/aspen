@@ -328,22 +328,23 @@ static void html_report(void *ctx, const struct totals *t)
 /* -R: render `path`'s subtree as a self-contained HTML document into
  * <path>/00Tree.html (tree's setoutput()+emit_tree()). Open failures are
  * silent — tree's fopen failure leaves the listing unchanged. */
-static void html_rerun(void *ctx, const char *path, const struct options *o)
+static int html_rerun(void *ctx, const char *path, const struct options *o)
 {
 	struct html_ctx *parent = ctx;
 	char out[PATH_MAX];
 	int n = snprintf(out, sizeof out, "%s/00Tree.html", path);
 	if (n < 0 || (size_t)n >= sizeof out)
-		return;
+		return -1;
 	int fd = open(out, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 	if (fd < 0)
-		return;
+		return -1; /* I/O failure -> the caller exits 2 (D1) */
 	struct html_ctx sub;
 	html_ctx_init(&sub, fd, parent->mb_cur_max, o);
 	const char *roots[2] = { path, NULL };
 	render_tree(roots, o, &asp_html_renderer, &sub, NULL);
 	html_ctx_destroy(&sub);
 	close(fd);
+	return 0;
 }
 
 static const struct line_renderer html_vt = {

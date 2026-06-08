@@ -156,6 +156,23 @@ k=0; while [ "$k" -lt 6 ]; do
 done
 [ "$d7fail" = 1 ] && fail=1
 
+# D8: -R is HTML/text-only. Under -J/-X aspen runs NO rerun — the -R output equals
+# the no-R output (no spurious boundary "contents":[]) and no 00Tree.html files are
+# written (tree writes JSON/XML-content files + emits the empty boundary contents;
+# aspen does neither, consistent with D2).
+r8="$dv/r8"; rm -rf "$r8"; mkdir -p "$r8/dir/child"
+for fmt in -J -X; do
+	"$ASP" $fmt -R -L 1 "$r8" >"$dv/r8.r" 2>/dev/null
+	"$ASP" $fmt -L 1 "$r8" >"$dv/r8.n" 2>/dev/null
+	if ! diff -q "$dv/r8.r" "$dv/r8.n" >/dev/null 2>&1; then
+		echo "DEVIATIONS D8: $fmt -R changed the output (should be a no-op for JSON/XML)"; fail=1
+	fi
+done
+nf8=$(find "$r8" -name 00Tree.html 2>/dev/null | wc -l)
+if [ "$nf8" -ne 0 ]; then
+	echo "DEVIATIONS D8: -J/-X -R wrote $nf8 00Tree.html file(s) (should be 0 — HTML/text only)"; fail=1
+fi
+
 chmod -R u+rwx "$dv" 2>/dev/null || :
 rm -rf "$dv"
 
