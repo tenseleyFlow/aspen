@@ -111,11 +111,23 @@ static int cmp(const void *pa, const void *pb, void *vc)
 	return basecmp(c, a, b);
 }
 
-/* True when collation is byte-order (C/POSIX): strcoll is already cheap there. */
+/* True when collation is byte-order (strcoll == memcmp): C/POSIX by name, plus
+ * locales like C.UTF-8 that collate by code point but aren't named "C". Detected
+ * with a strxfrm identity probe — if strxfrm is the identity transform then
+ * strcoll must equal memcmp (the strxfrm contract), so strcmp sorting is exact
+ * and the O(n) strxfrm key pass can be skipped. A false negative only costs
+ * speed (keeps the strxfrm path); it never reorders, so parity is safe. */
 static int c_collate(void)
 {
 	const char *l = setlocale(LC_COLLATE, NULL);
-	return !l || !strcmp(l, "C") || !strcmp(l, "POSIX");
+	if (!l || !strcmp(l, "C") || !strcmp(l, "POSIX"))
+		return 1;
+	/* Mixed case, digits, an accented UTF-8 byte pair, and a control byte: any
+	 * case- or accent-folding collation breaks byte identity here. */
+	static const char probe[] = "\tAaZz09\xc3\xa9";
+	char buf[64];
+	size_t n = strxfrm(buf, probe, sizeof buf);
+	return n == sizeof probe - 1 && memcmp(buf, probe, n) == 0;
 }
 
 struct keyed {

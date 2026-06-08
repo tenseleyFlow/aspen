@@ -55,6 +55,30 @@ void name_print(struct dstr *out, const char *s, size_t len, int mb_cur_max, int
 	}
 
 	if (mb_cur_max > 1) {
+		/* Pure-ASCII fast path: in a multibyte locale every ASCII byte is its own
+		 * character, so iswprint == isprint and wctomb is the identity — the
+		 * result is byte-identical to the wide path below, without the per-name
+		 * malloc + mbstowcs + wctomb loop. Only real multibyte names need it. */
+		size_t a = 0;
+		while (a < len && (unsigned char)s[a] < 0x80)
+			a++;
+		if (a == len) {
+			if (flags & NP_QUOTE)
+				dstr_appendc(out, '"');
+			for (size_t i = 0; i < len; i++) {
+				unsigned char c = (unsigned char)s[i];
+				if (isprint(c))
+					dstr_appendc(out, (char)c);
+				else if (flags & NP_QMARK)
+					dstr_appendc(out, '?');
+				else
+					esc_octal(out, c);
+			}
+			if (flags & NP_QUOTE)
+				dstr_appendc(out, '"');
+			return;
+		}
+
 		wchar_t *ws = asp_xmalloc((len + 1) * sizeof *ws);
 		size_t k = mbstowcs(ws, s, len + 1);
 		if (k != (size_t)-1) {

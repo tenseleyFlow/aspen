@@ -391,10 +391,19 @@ phase() { # <bin_a> <bin_b> <label>
 # dictionary UTF-8 locale (exercises strxfrm sort + multibyte name printing).
 # Skip a UTF-8 locale gracefully where none is installed (e.g. musl/Alpine).
 utf8=""
-for _L in en_US.UTF-8 en_US.utf8 C.UTF-8 C.utf8; do
+for _L in en_US.UTF-8 en_US.utf8; do
 	[ "$(LC_ALL=$_L locale charmap 2>/dev/null)" = "UTF-8" ] && { utf8=$_L; break; }
 done
-locales="C"; [ -n "$utf8" ] && locales="C $utf8"
+# Also a byte-order UTF-8 locale (C.UTF-8): exercises SR-3.2 — the strxfrm-identity
+# collation probe (strcmp sort path) and the ASCII name fast path — which the
+# dictionary locale above does not. Added when present and distinct.
+cutf8=""
+for _L in C.UTF-8 C.utf8; do
+	[ "$(LC_ALL=$_L locale charmap 2>/dev/null)" = "UTF-8" ] && { cutf8=$_L; break; }
+done
+locales="C"
+[ -n "$utf8" ] && locales="$locales $utf8"
+[ -n "$cutf8" ] && [ "$cutf8" != "$utf8" ] && locales="$locales $cutf8"
 echo "GOLDEN: locales = $locales"
 
 selffail=0; parityfail=0
