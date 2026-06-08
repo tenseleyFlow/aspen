@@ -191,6 +191,25 @@ elif grep -qiE 'tree v[0-9]|steve baker|copyleft' "$dv/hf.o"; then
 	echo "DEVIATIONS A7: default -H footer leaked tree's attribution text (should be aspen identity only)"; fail=1
 fi
 
+# A4 residual (reaudit3): under --du/--prune/-d a -P/-I pattern matching a DIRECTORY
+# — by bare basename too, not only by path/suffix — makes tree reveal that dir's whole
+# subtree (file.c matched/pattern=0), which tree's own streaming/-J/-X paths do NOT.
+# aspen applies dir-match-shows-subtree only under --matchdirs, consistently in every
+# mode. Assert the owned behaviour: a dir-basename match under --prune gets NO special
+# reveal (same as a no-match pattern), and --matchdirs recovers tree parity.
+r4="$dv/a4res"; rm -rf "$r4"; mkdir -p "$r4/aa/inner" "$r4/bb"
+: > "$r4/aa/f.c"; : > "$r4/aa/inner/deep.h"; : > "$r4/bb/x.txt"
+a4_aa=$("$ASP" --prune -P aa "$r4" 2>/dev/null | nums)         # aa matches the dir
+a4_zz=$("$ASP" --prune -P zzNoMatch "$r4" 2>/dev/null | nums)  # matches nothing
+if [ "$a4_aa" != "$a4_zz" ]; then
+	echo "DEVIATIONS A4-residual: aspen --prune -P <dir-basename aa>[$a4_aa] != <no-match>[$a4_zz] — aspen gave the matched directory a subtree reveal (should be --matchdirs-only)"; fail=1
+fi
+a4_amd=$("$ASP" --prune --matchdirs -P aa "$r4" 2>/dev/null | nums)
+a4_tmd=$("$ref" --prune --matchdirs -P aa "$r4" 2>/dev/null | nums)
+if [ "$a4_amd" != "$a4_tmd" ]; then
+	echo "DEVIATIONS A4-residual: aspen --matchdirs --prune -P aa[$a4_amd] != tree[$a4_tmd] (--matchdirs must recover parity)"; fail=1
+fi
+
 chmod -R u+rwx "$dv" 2>/dev/null || :
 rm -rf "$dv"
 
