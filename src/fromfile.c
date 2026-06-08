@@ -23,7 +23,64 @@ static struct fnode *newnode(const char *name)
 	n->lnk = NULL;
 	n->isdir = 0;
 	n->islink = 0;
+	n->ctail = NULL;
+	n->cidx = NULL;
 	return n;
+}
+
+/* Per-parent child index: an open-addressed name->fnode hash so fsearch is O(1)
+ * amortized instead of tree's O(N^2) linear sibling scan on large flat input.
+ * Build-only; freed by fchildren_free once the tree is read. */
+struct fchildren {
+	struct fnode **slot; /* power-of-two; NULL = empty */
+	size_t cap, len;
+};
+
+static unsigned long fname_hash(const char *s)
+{
+	unsigned long h = 1469598103934665603UL; /* FNV-1a */
+	for (; *s; s++) {
+		h ^= (unsigned char)*s;
+		h *= 1099511628211UL;
+	}
+	return h;
+}
+
+static struct fchildren *fchildren_new(void)
+{
+	struct fchildren *c = asp_xmalloc(sizeof *c);
+	c->cap = 16;
+	c->len = 0;
+	c->slot = asp_xmalloc(sizeof *c->slot * c->cap);
+	memset(c->slot, 0, sizeof *c->slot * c->cap);
+	return c;
+}
+
+static void fchildren_free(void *p)
+{
+	struct fchildren *c = p;
+	if (!c)
+		return;
+	free(c->slot);
+	free(c);
+}
+
+static void fchildren_grow(struct fchildren *c)
+{
+	size_t ncap = c->cap * 2, mask = ncap - 1;
+	struct fnode **ns = asp_xmalloc(sizeof *ns * ncap);
+	memset(ns, 0, sizeof *ns * ncap);
+	for (size_t i = 0; i < c->cap; i++) {
+		if (!c->slot[i])
+			continue;
+		size_t j = fname_hash(c->slot[i]->name) & mask;
+		while (ns[j])
+			j = (j + 1) & mask;
+		ns[j] = c->slot[i];
+	}
+	free(c->slot);
+	c->slot = ns;
+	c->cap = ncap;
 }
 
 /*
@@ -62,20 +119,36 @@ static char *nextpc(char **p, int *tok)
 	return s;
 }
 
-/* tree's search(): find `name` in the sibling list, reusing on match (shared
- * prefixes), else append at the tail in insertion order (sort happens later). */
-static struct fnode *fsearch(struct fnode **list, const char *name)
+/* tree's search(): find `name` among parent's children, reusing on match (shared
+ * prefixes), else append at the tail in insertion order (sort happens later).
+ * O(1) amortized via parent->cidx instead of tree's O(N^2) linear scan. */
+static struct fnode *fsearch(struct fnode *parent, const char *name)
 {
-	if (*list == NULL)
-		return (*list = newnode(name));
-	struct fnode *ptr, *prev = *list;
-	for (ptr = *list; ptr != NULL; ptr = ptr->next) {
-		if (strcmp(ptr->name, name) == 0)
-			return ptr;
-		prev = ptr;
+	struct fchildren *c = parent->cidx;
+	if (!c)
+		c = parent->cidx = fchildren_new();
+	size_t mask = c->cap - 1;
+	size_t i = fname_hash(name) & mask;
+	while (c->slot[i]) {
+		if (strcmp(c->slot[i]->name, name) == 0)
+			return c->slot[i]; /* reuse (shared prefix) */
+		i = (i + 1) & mask;
 	}
 	struct fnode *n = newnode(name);
-	prev->next = n;
+	if (parent->ctail)
+		parent->ctail->next = n;
+	else
+		parent->child = n;
+	parent->ctail = n;
+	if ((c->len + 1) * 10 >= c->cap * 7) { /* keep load < 0.7; reprobe after grow */
+		fchildren_grow(c);
+		mask = c->cap - 1;
+		i = fname_hash(name) & mask;
+		while (c->slot[i])
+			i = (i + 1) & mask;
+	}
+	c->slot[i] = n;
+	c->len++;
 	return n;
 }
 
@@ -95,7 +168,7 @@ static int is_comment(const char *line)
 /* --fromfile: newline-separated paths, tokenized into a shared hierarchy. */
 static struct fnode *read_paths(FILE *fp, const struct options *o, char *buf)
 {
-	struct fnode *top = NULL;
+	struct fnode root = { 0 }; /* dummy parent so the top list has a cidx/ctail too */
 	while (fgets(buf, MAXPATH, fp) != NULL) {
 		if (is_comment(buf))
 			continue;
@@ -105,7 +178,7 @@ static struct fnode *read_paths(FILE *fp, const struct options *o, char *buf)
 			continue;
 
 		char *spath = buf;
-		struct fnode **cwd = &top;
+		struct fnode *cwd = &root;
 		char *link = o->fflinks ? strstr(buf, " -> ") : NULL;
 		if (link) {
 			*link = '\0';
@@ -123,7 +196,7 @@ static struct fnode *read_paths(FILE *fp, const struct options *o, char *buf)
 				ent = fsearch(cwd, s);
 				if (tok == T_DIR)
 					ent->isdir = 1;
-				cwd = &ent->child;
+				cwd = ent;
 			}
 		} while (tok != T_FILE && tok != T_EOP);
 
@@ -134,13 +207,14 @@ static struct fnode *read_paths(FILE *fp, const struct options *o, char *buf)
 			ent->lnk = asp_strdup(link);
 		}
 	}
-	return top;
+	fchildren_free(root.cidx);
+	return root.child;
 }
 
 /* --fromtabfile: leading tabs give depth; istack tracks the parent per level. */
 static struct fnode *read_tabs(FILE *fp, const struct options *o, char *buf)
 {
-	struct fnode *top = NULL;
+	struct fnode root = { 0 }; /* dummy parent for the top-level list */
 	struct fnode **istack = asp_xmalloc(sizeof *istack * MAXDEPTH);
 	memset(istack, 0, sizeof *istack * MAXDEPTH);
 	size_t line = 0, top_depth = 0;
@@ -177,7 +251,7 @@ static struct fnode *read_tabs(FILE *fp, const struct options *o, char *buf)
 			continue;
 		}
 
-		struct fnode *ent = fsearch(tabs ? &istack[tabs - 1]->child : &top, spath);
+		struct fnode *ent = fsearch(tabs ? istack[tabs - 1] : &root, spath);
 		istack[tabs] = ent;
 		if (tabs)
 			istack[tabs - 1]->isdir = 1;
@@ -190,7 +264,8 @@ static struct fnode *read_tabs(FILE *fp, const struct options *o, char *buf)
 		top_depth = tabs;
 	}
 	free(istack);
-	return top;
+	fchildren_free(root.cidx);
+	return root.child;
 }
 
 struct fnode *asp_fromfile_read(const char *arg, const struct options *o,
@@ -215,6 +290,7 @@ void asp_fnode_free(struct fnode *top)
 	while (top) {
 		struct fnode *next = top->next;
 		asp_fnode_free(top->child);
+		fchildren_free(top->cidx); /* build-only index, if not already freed */
 		free(top->name);
 		free(top->lnk);
 		free(top);

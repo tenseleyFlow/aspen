@@ -22,6 +22,10 @@ struct fnode {
 	char *lnk;           /* --fflinks target, or NULL */
 	int isdir;
 	int islink;
+	/* build-only: O(1) sibling dedup/append (freed after read). ctail is the
+	 * child list's tail; cidx is a name->child hash. */
+	struct fnode *ctail;
+	void *cidx;
 };
 
 /*
