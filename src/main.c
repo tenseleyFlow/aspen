@@ -66,6 +66,23 @@ static const struct line_renderer DEBUG_VT = {
 };
 static const struct renderer DEBUG_RENDERER = { &DEBUG_VT, NULL, NULL };
 
+/* Derive options that the traversal needs but the parser can't know alone — today
+ * just o.colorize, which gates the metadata stat in render_tree. Deriving it here,
+ * once, before any renderer is built means it's no longer a side effect of which
+ * dispatch arm runs (json/xml used to leave it at its memset 0 by luck) — a new
+ * renderer can't silently skip the mode stats (SR02-2.3). unix: the full
+ * TTY/-C/-n/env color decision; html: -C only (the CSS class needs the exec bit;
+ * a file format has no TTY notion); json/xml: never colorize. */
+static void options_finalize(struct options *o, int outfd)
+{
+	if (o->format == OUT_HTML)
+		o->colorize = o->forcecolor;
+	else if (o->format == OUT_UNIX)
+		o->colorize = color_enabled(o, outfd, NULL);
+	else
+		o->colorize = 0;
+}
+
 int main(int argc, char **argv)
 {
 	setlocale(LC_CTYPE, "");
@@ -114,6 +131,8 @@ int main(int argc, char **argv)
 		}
 	}
 
+	options_finalize(&o, outfd); /* derive o.colorize once, before the walk */
+
 	int rc;
 	if (debug) {
 		struct totals t;
@@ -130,17 +149,13 @@ int main(int argc, char **argv)
 		rc = render_tree(roots, &o, &asp_xml_renderer, &x, NULL);
 		xml_ctx_destroy(&x);
 	} else if (o.format == OUT_HTML) {
-		/* -C in HTML emits a per-entry class (incl. EXEC), which needs the exec
-		 * bit; flag colorize so the traversal stats entries (tree always does). */
-		o.colorize = o.forcecolor;
 		struct html_ctx hc;
 		html_ctx_init(&hc, outfd, mb, &o);
 		rc = render_tree(roots, &o, &asp_html_renderer, &hc, NULL);
 		html_ctx_destroy(&hc);
 	} else {
 		struct colorizer col;
-		color_init(&col, &o, outfd);
-		o.colorize = col.enabled;
+		color_init(&col, &o, outfd); /* o.colorize already set (== col.enabled) */
 		struct unix_ctx u;
 		unix_ctx_init(&u, outfd, mb, &o, &col);
 		rc = render_tree(roots, &o, &asp_unix_renderer, &u, NULL);

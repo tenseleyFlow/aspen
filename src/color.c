@@ -100,16 +100,13 @@ static const char *get(struct colorizer *c, int col, const char *dflt)
 	return (c->code && c->code[col]) ? c->code[col] : dflt;
 }
 
-void color_init(struct colorizer *c, const struct options *o, int outfd)
+int color_enabled(const struct options *o, int outfd, const char **out_cs)
 {
-	c->enabled = 0;
-	c->linktargetcolor = 0;
-	c->code = NULL;
-	c->ext = NULL;
-	c->buf = NULL;
+	if (out_cs)
+		*out_cs = NULL;
 
 	if (o->format != OUT_UNIX) /* color is unix-only; tree skips it for -H/-J/-X */
-		return;
+		return 0;
 
 	int nocolor = o->nocolor;
 	const char *s = getenv("NO_COLOR");
@@ -117,7 +114,7 @@ void color_init(struct colorizer *c, const struct options *o, int outfd)
 		nocolor = 1;
 
 	if (getenv("TERM") == NULL)
-		return;
+		return 0;
 
 	int cc = getenv("CLICOLOR") != NULL;
 	int force = o->forcecolor;
@@ -131,6 +128,23 @@ void color_init(struct colorizer *c, const struct options *o, int outfd)
 		cs = DEFAULT_MAP;
 
 	if (cs == NULL || (!force && (nocolor || !isatty(outfd))))
+		return 0;
+
+	if (out_cs)
+		*out_cs = cs;
+	return 1;
+}
+
+void color_init(struct colorizer *c, const struct options *o, int outfd)
+{
+	c->enabled = 0;
+	c->linktargetcolor = 0;
+	c->code = NULL;
+	c->ext = NULL;
+	c->buf = NULL;
+
+	const char *cs;
+	if (!color_enabled(o, outfd, &cs))
 		return;
 
 	c->enabled = 1;
