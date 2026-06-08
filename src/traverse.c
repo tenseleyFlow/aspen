@@ -236,10 +236,16 @@ struct statprov *asp_statprov_create(const struct options *o)
 	int stat_heavy = meta_wanted(o) || sort_needs_stat(o) || o->colorize ||
 			 o->classify || o->xdev || o->follow;
 	const char *iomode = getenv("ASP_IO");
+	/* --threads 1 (and ASP_IO=serial) force the inline path: the block below is
+	 * skipped, so no pool/ring is ever constructed for a serial run. */
 	int serial = (o->threads == 1) || (iomode && !strcmp(iomode, "serial"));
 	if (stat_heavy && !serial && !(o->fromfile || o->fromtabfile)) {
-		if (iomode && !strcmp(iomode, "uring"))
+		if (iomode && !strcmp(iomode, "uring")) {
 			sp->ring = asp_ring_create(256); /* NULL if unavailable */
+			if (!sp->ring) /* perf-truth: don't silently pretend uring ran */
+				fprintf(stderr, "aspen: ASP_IO=uring requested but io_uring "
+						"is unavailable; using the thread pool.\n");
+		}
 		if (!sp->ring) {
 			int workers = (o->threads > 0) ? o->threads
 						       : asp_pool_default_workers();
