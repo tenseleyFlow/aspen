@@ -18,16 +18,23 @@ fail=0
 
 norm() { sed 's/^tree: /PROG: /; s/^aspen: /PROG: /'; }
 
-# cmp_parity <label> ... runs $ref then $ASP with the SAME argv, compares
-# normalized stdout+stderr and the exit code (flagging a signal-kill rc >= 128).
+# cmp_parity <label> ... runs $ref then $ASP with the SAME argv. The PRIMARY
+# assertion is that aspen survives (no signal). Parity-with-tree is checked only
+# when tree ALSO survives — on some hostile inputs tree itself crashes (e.g. macOS
+# SIGTRAPs on a 64KB --fromfile line); aspen surviving where tree dies is a win,
+# not a divergence, so we note it and pass.
 cmp_parity() {
 	_lbl=$1; shift
 	"$ref" "$@" >"$adv/r.o" 2>"$adv/r.e"; _rrc=$?
 	"$ASP" "$@" >"$adv/a.o" 2>"$adv/a.e"; _arc=$?
-	norm <"$adv/r.e" >"$adv/r.en"; norm <"$adv/a.e" >"$adv/a.en"
 	if [ "$_arc" -ge 128 ]; then
 		echo "ADVERSARIAL[$_lbl]: aspen killed by signal (rc=$_arc)"; fail=1; return
 	fi
+	if [ "$_rrc" -ge 128 ]; then
+		echo "ADVERSARIAL[$_lbl]: tree crashed (rc=$_rrc); aspen survived (rc=$_arc) — robustness win, parity skipped"
+		return
+	fi
+	norm <"$adv/r.e" >"$adv/r.en"; norm <"$adv/a.e" >"$adv/a.en"
 	if ! cmp -s "$adv/r.o" "$adv/a.o" || ! cmp -s "$adv/r.en" "$adv/a.en" || [ "$_rrc" != "$_arc" ]; then
 		echo "ADVERSARIAL[$_lbl]: diverges from tree (rc $_rrc/$_arc)"
 		diff "$adv/r.o" "$adv/a.o" 2>/dev/null | sed -n '1,4p'
@@ -54,10 +61,12 @@ cmp_parity "fromfile-64k-line" --fromfile "$adv/ff.txt"
 huge=$(awk 'BEGIN{s="";for(i=0;i<60000;i++)s=s "*.x=01;32:";print s}')
 c="$adv/c"; mkdir -p "$c"; : > "$c/f.x"; : > "$c/g.txt"
 TREE_COLORS="$huge" "$ASP" -C -n "$c" >"$adv/a.o" 2>"$adv/a.e"; arc=$?
+TREE_COLORS="$huge" "$ref" -C -n "$c" >"$adv/r.o" 2>"$adv/r.e"; rrc=$?
 if [ "$arc" -ge 128 ]; then
 	echo "ADVERSARIAL[tree_colors-600k]: aspen killed by signal (rc=$arc)"; fail=1
+elif [ "$rrc" -ge 128 ]; then
+	echo "ADVERSARIAL[tree_colors-600k]: tree crashed (rc=$rrc); aspen survived — robustness win, parity skipped"
 else
-	TREE_COLORS="$huge" "$ref" -C -n "$c" >"$adv/r.o" 2>"$adv/r.e"
 	cmp -s "$adv/r.o" "$adv/a.o" || { echo "ADVERSARIAL[tree_colors-600k]: -C output diverges"; fail=1; }
 fi
 
