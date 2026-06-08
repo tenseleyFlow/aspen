@@ -78,6 +78,8 @@ cell() {
 	set -- "LC_ALL=$_lc $ASP $_flags '$_dir' >/dev/null 2>&1" \
 	       "LC_ALL=$_lc $T232 $_flags '$_dir' >/dev/null 2>&1"
 	[ "$HAVE221" = 1 ] && set -- "$@" "LC_ALL=$_lc $T221 $_flags '$_dir' >/dev/null 2>&1"
+	# cold also shows the opt-in read-prefetch (warm would just double-read)
+	[ "$_cache" = cold ] && set -- "$@" "ASP_PREFETCH=1 LC_ALL=$_lc $ASP $_flags '$_dir' >/dev/null 2>&1"
 	if [ "$_cache" = cold ]; then
 		"$HF" --shell sh -w 0 -r "${COLDREPS:-8}" --prepare "$SUDO_DROP" --export-csv "$_csv" "$@" >/dev/null 2>&1 || { echo "  hf failed: $_shape $_flags/$_lc/$_cache"; return; }
 	else
@@ -85,7 +87,7 @@ cell() {
 	fi
 	# parse: hyperfine csv = command,mean,stddev,median,user,system,min,max
 	awk -F, -v m="$MACH" -v sh="$_shape" -v e="$_ent" -v fl="[$_flags]" -v lc="$_lc" -v ca="$_cache" '
-	  NR>1 { cmd=$1; tool=(cmd ~ /\/aspen|[ =]\.\/aspen/)?"aspen":(cmd ~ /2\.3\.2/?"tree-2.3.2":(cmd ~ /2\.2\.1/?"tree-2.2.1":"?"));
+	  NR>1 { cmd=$1; tool=(cmd ~ /ASP_PREFETCH/)?"aspen-prefetch":((cmd ~ /\/aspen|[ =]\.\/aspen/)?"aspen":(cmd ~ /2\.3\.2/?"tree-2.3.2":(cmd ~ /2\.2\.1/?"tree-2.2.1":"?")));
 	         printf "%s,%s,%s,%s,%s,%s,%s,%.5f,%.5f,%.5f\n", m,sh,e,fl,lc,ca,tool,$2,$7,$3 }' "$_csv" >> "$out"
 	# progress line with speedups vs 2.3.2
 	awk -F, -v sh="$_shape" -v fl="$_flags" -v lc="$_lc" -v ca="$_cache" '
