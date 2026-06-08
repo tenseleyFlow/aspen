@@ -63,12 +63,15 @@ jobs:
         uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
-          prepare: pkg install -y git gmake
+          prepare: pkg install -y git gmake; pkg install -y hyperfine || true
           run: |
             ./configure
             gmake CFLAGS="-O2 -Werror"
             gmake test
             ASP_PREFETCH=1 gmake test   # SR-3.5 prefetch parity (FreeBSD dlopen-libthr path)
+            # SR02-3.4: report-only perf on the *primary dev OS* — observed, never
+            # gated (VM timing is too noisy to gate on). A regression shows in the log.
+            gmake bench || true
 
   # musl libc (static-release target) via musl-gcc on the Linux runner. (An
   # Alpine container can't host the node-based actions — checkout needs glibc.)
