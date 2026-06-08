@@ -1097,29 +1097,38 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 		root_st = &rs;
 	}
 
+	/* tree canonicalizes a -f root once: strip trailing '/' for the printed root line
+	 * and the child-path prefix (a root of all slashes keeps one); verbatim without -f.
+	 * dr is the display string for every root()/tree() call and seeds c.path below. */
+	struct dstr droot;
+	dstr_init(&droot);
+	dstr_appendz(&droot, arg);
+	if (o->fullpath)
+		while (droot.len > 1 && droot.data[droot.len - 1] == '/') {
+			droot.len--;
+			droot.data[droot.len] = '\0';
+		}
+	const char *dr = droot.data;
+
 	int open_err = 0;
 	struct fnode *ftop = asp_fromfile_read(arg, o, o->fromtabfile, &open_err);
 
 	/* lstat failure (e.g. a nonexistent path-list) is a hard error, like tree. */
 	if (root_st == NULL) {
 		if (r->tree)
-			r->tree->tree(ctx, arg, NULL, 0, NULL, NULL, tot, last_root);
+			r->tree->tree(ctx, dr, NULL, 0, NULL, NULL, tot, last_root);
 		else
-			r->line->root(ctx, arg, "error opening dir", NULL);
+			r->line->root(ctx, dr, "error opening dir", NULL);
 		(*errors)++;
 		asp_fnode_free(ftop);
+		dstr_free(&droot);
 		return;
 	}
 
 	struct wctx c;
 	arena_init(&c.arena, 0);
 	dstr_init(&c.path);
-	dstr_appendz(&c.path, arg);
-	if (o->fullpath) /* tree strips trailing '/' from the root under -f */
-		while (c.path.len > 1 && c.path.data[c.path.len - 1] == '/') {
-			c.path.len--;
-			c.path.data[c.path.len] = '\0';
-		}
+	dstr_appendz(&c.path, dr); /* dr is already the -f-stripped root */
 	c.o = o;
 	c.r = r;
 	c.rctx = ctx;
@@ -1144,9 +1153,9 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	}
 
 	if (r->tree) {
-		r->tree->tree(ctx, arg, root_st, 1, NULL, top, tot, last_root);
+		r->tree->tree(ctx, dr, root_st, 1, NULL, top, tot, last_root);
 	} else {
-		r->line->root(ctx, arg, NULL, root_st);
+		r->line->root(ctx, dr, NULL, root_st);
 		tot->dirs++; /* root counts as a directory */
 		emit_level(&c, top, 1);
 	}
@@ -1154,6 +1163,7 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	wctx_scratch_free(&c);
 	inoset_destroy(&c.seen);
 	dstr_free(&c.path);
+	dstr_free(&droot);
 	arena_destroy(&c.arena);
 	asp_fnode_free(ftop);
 }
@@ -1167,6 +1177,22 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		return;
 	}
 
+	/* tree canonicalizes a -f root once: it strips trailing '/' for the printed root
+	 * line AND the path prefixed onto children (a root of all slashes keeps one).
+	 * Without -f the root prints verbatim. dr is the display string handed to every
+	 * root()/tree() call — the JSON/XML renderers seed their own path stack from it,
+	 * so this is what fixes "q//child" in -J/-X. c.path (below) is stripped separately
+	 * for the openat prefix. */
+	struct dstr droot;
+	dstr_init(&droot);
+	dstr_appendz(&droot, root);
+	if (o->fullpath)
+		while (droot.len > 1 && droot.data[droot.len - 1] == '/') {
+			droot.len--;
+			droot.data[droot.len] = '\0';
+		}
+	const char *dr = droot.data;
+
 	struct asp_dir *d;
 	if (asp_diropen(root, &d) != 0) {
 		/* tree: lstat the root. If it exists (a non-directory, or a directory we
@@ -1177,13 +1203,14 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		const struct asp_statinfo *fst =
 			(asp_stat_at(AT_FDCWD, root, 0, &rs2) == 0) ? &rs2 : NULL;
 		if (r->tree)
-			r->tree->tree(ctx, root, fst, 0, NULL, NULL, tot, last_root);
+			r->tree->tree(ctx, dr, fst, 0, NULL, NULL, tot, last_root);
 		else
-			r->line->root(ctx, root, "error opening dir", fst);
+			r->line->root(ctx, dr, "error opening dir", fst);
 		if (fst)
 			tot->files++;
 		else
 			(*errors)++;
+		dstr_free(&droot);
 		return;
 	}
 
@@ -1266,7 +1293,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		 * renderer counts entries and emits; we just compute the du total. */
 		struct entry **top = build_level(&c, d, 1, 0, NULL);
 		if (c.root_err) { /* SR-2.12: root itself over --filelimit */
-			r->tree->tree(ctx, root, root_st, 1, c.root_err, NULL, tot, last_root);
+			r->tree->tree(ctx, dr, root_st, 1, c.root_err, NULL, tot, last_root);
 		} else {
 			if (o->condense || (o->prune && !o->dirsonly))
 				condense_prune_level(top, &c.arena, o, o->prune && !o->dirsonly);
@@ -1279,12 +1306,12 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 					tot->size = dusum;
 				}
 			}
-			r->tree->tree(ctx, root, root_st, 1, NULL, top, tot, last_root);
+			r->tree->tree(ctx, dr, root_st, 1, NULL, top, tot, last_root);
 		}
 	} else if (needfulltree(o)) {
 		struct entry **top = build_level(&c, d, 1, 0, NULL);
 		if (c.root_err) { /* SR-2.12: root itself over --filelimit -> 1 dir */
-			r->line->root(ctx, root, c.root_err, root_st);
+			r->line->root(ctx, dr, c.root_err, root_st);
 			tot->dirs++;
 		} else {
 			if (o->condense || (o->prune && !o->dirsonly))
@@ -1298,7 +1325,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 					tot->size = dusum;
 				}
 			}
-			r->line->root(ctx, root, NULL, root_st);
+			r->line->root(ctx, dr, NULL, root_st);
 			if (top[0]) /* tree counts the root as a directory only when non-empty */
 				tot->dirs++;
 			emit_level(&c, top, 1);
@@ -1308,7 +1335,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		 * directory only if the walk displayed at least one child (any displayed
 		 * descendant means the root listing was non-empty), matching tree. */
 		unsigned long before = tot->dirs + tot->files;
-		r->line->root(ctx, root, NULL, root_st);
+		r->line->root(ctx, dr, NULL, root_st);
 		walk_dir(&c, d, 1);
 		if (tot->dirs + tot->files > before)
 			tot->dirs++;
@@ -1321,5 +1348,6 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	wctx_scratch_free(&c);
 	inoset_destroy(&c.seen);
 	dstr_free(&c.path);
+	dstr_free(&droot);
 	arena_destroy(&c.arena);
 }

@@ -112,6 +112,13 @@ if [ -f tests/golden/patterns.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# -f root trailing-slash canonicalization parity (reaudit3 f-root-trailing-slash).
+if [ -f tests/golden/fpath.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/fpath.sh; then
+		fail=1
+	fi
+fi
+
 # Per-parser-flag golden coverage lint (SR-1.7): every flag has >=1 case.
 if [ -f tests/golden/flag_coverage.sh ]; then
 	if ! sh tests/golden/flag_coverage.sh; then
