@@ -148,6 +148,11 @@ int asp_dirread(struct asp_dir *d, struct asp_dirent *e)
 		e->type = ASP_UNKNOWN;
 #endif
 		e->name = de->d_name;
+#ifdef _DIRENT_HAVE_D_NAMLEN
+		e->namelen = de->d_namlen; /* free on BSD/macOS */
+#else
+		e->namelen = strlen(de->d_name);
+#endif
 		return 1;
 	}
 }
@@ -192,6 +197,7 @@ int asp_dirread(struct asp_dir *d, struct asp_dirent *e)
 			continue;
 		e->type = type_from_dt(de->d_type);
 		e->name = de->d_name;
+		e->namelen = strlen(de->d_name); /* linux_dirent64 has no d_namlen */
 #else
 		struct dirent *de = (void *)(d->buf + d->pos);
 		d->pos += de->d_reclen;
@@ -203,6 +209,11 @@ int asp_dirread(struct asp_dir *d, struct asp_dirent *e)
 			continue;
 		e->type = type_from_dt(de->d_type);
 		e->name = de->d_name;
+#ifdef _DIRENT_HAVE_D_NAMLEN
+		e->namelen = de->d_namlen; /* free on BSD/macOS getdirentries */
+#else
+		e->namelen = strlen(de->d_name);
+#endif
 #endif
 		return 1;
 	}

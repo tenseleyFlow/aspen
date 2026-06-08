@@ -28,6 +28,7 @@ struct asp_dir;
 
 struct asp_dirent {
 	const char *name; /* valid until the next asp_dirread on this dir */
+	size_t namelen;   /* strlen(name); from d_namlen where the platform has it */
 	enum asp_type type;
 };
 

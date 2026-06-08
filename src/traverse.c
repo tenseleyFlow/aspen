@@ -343,7 +343,7 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 			}
 		}
 
-		struct entry *e = entry_new(&c->arena, de.name, strlen(de.name), t);
+		struct entry *e = entry_new(&c->arena, de.name, de.namelen, t);
 		if (have_si) {
 			e->flags |= ENT_STATTED;
 			e->ino = si.ino;
@@ -394,7 +394,7 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 		if (c->o->gitignore && c->fstack) {
 			size_t save = c->path.len;
 			dstr_appendc(&c->path, '/');
-			dstr_append(&c->path, de.name, strlen(de.name));
+			dstr_append(&c->path, de.name, de.namelen);
 			int filt = gitignore_filtered(c->fstack, c->path.data, de.name,
 						       isdir, c->o->ignorecase);
 			c->path.len = save;
@@ -421,7 +421,7 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 		if (o->showinfo && c->istack) {
 			size_t save = c->path.len;
 			dstr_appendc(&c->path, '/');
-			dstr_append(&c->path, de.name, strlen(de.name));
+			dstr_append(&c->path, de.name, de.namelen);
 			char **desc = info_check(c->istack, c->path.data, de.name,
 						 c->info_top, isdir, o->ignorecase);
 			c->path.len = save;
