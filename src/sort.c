@@ -119,15 +119,22 @@ static int cmp(const void *pa, const void *pb, void *vc)
  * speed (keeps the strxfrm path); it never reorders, so parity is safe. */
 static int c_collate(void)
 {
+	/* LC_COLLATE is set once at startup (main) and never changes, so the probe's
+	 * result is process-invariant — cache it instead of re-running setlocale + a
+	 * strxfrm probe per directory (SR02-1.2). -1 = not yet computed. */
+	static int cached = -1;
+	if (cached >= 0)
+		return cached;
+
 	const char *l = setlocale(LC_COLLATE, NULL);
 	if (!l || !strcmp(l, "C") || !strcmp(l, "POSIX"))
-		return 1;
+		return (cached = 1);
 	/* Mixed case, digits, an accented UTF-8 byte pair, and a control byte: any
 	 * case- or accent-folding collation breaks byte identity here. */
 	static const char probe[] = "\tAaZz09\xc3\xa9";
 	char buf[64];
 	size_t n = strxfrm(buf, probe, sizeof buf);
-	return n == sizeof probe - 1 && memcmp(buf, probe, n) == 0;
+	return (cached = (n == sizeof probe - 1 && memcmp(buf, probe, n) == 0));
 }
 
 struct keyed {
