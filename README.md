@@ -56,3 +56,17 @@ ci/         preflight script  (.github/workflows/ci.yml drives CI)
 1. **Parity is the floor** — every release is a drop-in for `tree` 2.3.2.
 2. **Faster than tree, always** — enforced by the CI perf gate.
 3. Among parity-preserving choices, the **fastest** one wins.
+
+## aspen extensions
+
+These are aspen-only knobs that **do not exist in `tree`** and **never change the output bytes** —
+they only tune *how* the work is done, so default behavior stays byte-identical. They are kept out
+of `--help` deliberately (so `aspen --help` still matches `tree --help` exactly); `tree` rejects
+them as unknown flags.
+
+- **`--threads N`** — worker count for the parallel metadata-`stat` pass. `0` (default) auto-sizes to
+  the CPU count; `1` forces the serial path (no pool); `N` uses N workers. Output is identical
+  regardless — only `stat()` is parallelized.
+- **`ASP_IO=serial|uring`** (env) — pick the stat backend: `serial` forces the inline path; `uring`
+  uses Linux `io_uring` `statx` batches when available (else it says so on stderr and falls back to
+  the thread pool). Default is the thread pool when a stat-heavy flag is in play.
