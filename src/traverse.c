@@ -390,6 +390,14 @@ static void statprov_batch(struct statprov *sp, int dirfd, struct entry **ents,
 	if (sp->want_pool && n >= ASP_STAT_PAR_MIN) {
 		sp->want_pool = 0;
 		sp->pool = asp_pool_create(sp->workers);
+		/* Deterministic self-report of the lazy spawn (gated; off by default, no
+		 * parity impact). Fires exactly when the pool is created — a pure function
+		 * of batch size vs threshold — so the dead-zone test can assert the pool
+		 * decision directly, instead of counting thread syscalls that can't be told
+		 * apart from libc/jemalloc startup threads (which vary per host). */
+		if (sp->pool && getenv("ASP_TRACE_POOL"))
+			fprintf(stderr, "aspen: stat-pool spawned %d workers (batch=%zu)\n",
+				sp->workers, n);
 	}
 	struct stat_job j = { dirfd, want_st, ents };
 	struct asp_pool *p = (sp->pool && n >= ASP_STAT_PAR_MIN) ? sp->pool : NULL;
