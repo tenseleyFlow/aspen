@@ -173,6 +173,24 @@ if [ "$nf8" -ne 0 ]; then
 	echo "DEVIATIONS D8: -J/-X -R wrote $nf8 00Tree.html file(s) (should be 0 — HTML/text only)"; fail=1
 fi
 
+# A7: the default -H VERSION footer is aspen's OWN identity line, not tree's 4-line
+# copyright-attribution block (tree v… © Steve Baker / HTML+JSON+Charset credits).
+# This is the sanctioned program-identity difference (deviations.md "Program
+# identity"), but every golden -H case overrides the outtro with --houtro=%o, so the
+# real default footer was never byte-checked. Assert aspen emits exactly its
+# "\t\taspen v…" line and NONE of tree's attribution text — a regression that leaks
+# "tree v"/"Steve Baker"/"copyleft", or drops our line, is then caught.
+r7h="$dv/hfoot"; rm -rf "$r7h"; mkdir -p "$r7h/sub"; : > "$r7h/sub/f"
+"$ASP" -H . "$r7h" >"$dv/hf.o" 2>/dev/null
+if ! grep -q '<p class="VERSION">' "$dv/hf.o"; then
+	echo "DEVIATIONS A7: default -H emitted no VERSION footer block"; fail=1
+elif ! grep -Fq "$(printf '\t\taspen v')" "$dv/hf.o"; then
+	echo "DEVIATIONS A7: default -H VERSION footer is not the '\\t\\taspen v…' identity line"
+	grep -A1 'VERSION' "$dv/hf.o" | sed -n '1,3p' | cat -v; fail=1
+elif grep -qiE 'tree v[0-9]|steve baker|copyleft' "$dv/hf.o"; then
+	echo "DEVIATIONS A7: default -H footer leaked tree's attribution text (should be aspen identity only)"; fail=1
+fi
+
 chmod -R u+rwx "$dv" 2>/dev/null || :
 rm -rf "$dv"
 
