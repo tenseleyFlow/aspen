@@ -10,11 +10,12 @@ int render_tree(const char *const *dirs, const struct options *opts,
 	/* One stat backend for all roots (SR-2.5): created here, not per-root. */
 	struct statprov *sp = asp_statprov_create(opts);
 
-	/* begin/report/end share a signature across both renderer kinds; pick from
-	 * whichever vtable this renderer carries. asp_walk handles the per-root split. */
-	void (*begin)(void *) = r->line ? r->line->begin : r->tree->begin;
-	void (*report)(void *, const struct totals *) = r->line ? r->line->report : r->tree->report;
-	void (*end)(void *) = r->line ? r->line->end : r->tree->end;
+	/* begin/report/end share a signature across both renderer kinds (enforced by
+	 * the rdr_*_fn typedefs, SR02-2.4); pick from whichever vtable this renderer
+	 * carries. asp_walk handles the per-root split. */
+	rdr_begin_fn begin = r->line ? r->line->begin : r->tree->begin;
+	rdr_report_fn report = r->line ? r->line->report : r->tree->report;
+	rdr_end_fn end = r->line ? r->line->end : r->tree->end;
 
 	begin(ctx);
 	for (size_t i = 0; dirs[i]; i++)
