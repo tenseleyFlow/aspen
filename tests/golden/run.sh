@@ -11,8 +11,15 @@
 set -u
 
 here=tests/golden
-work=tests/.work
-ref="$work/ref/tree-2.3.2"
+refroot=tests/.work                 # shared, built once: the reference tree + its source repo
+ref="$refroot/ref/tree-2.3.2"
+# SR02-3.1/3.2: a RUN-PRIVATE workspace holds the pinned binary, every mutable
+# fixture, and the per-case scratch — so a concurrent build/bench that rebuilds
+# ./aspen or regenerates a corpus mid-phase can't cause phantom diffs (the audit
+# saw ~635), and the trap cleans it (incl. any chmod-000 deviation fixtures) even
+# on Ctrl-C. All the $work/* paths below are therefore private to this run.
+work=$(mktemp -d "${TMPDIR:-/tmp}/aspgold.XXXXXX") || { echo "GOLDEN: mktemp failed"; exit 1; }
+trap 'chmod -R u+rwx "$work" 2>/dev/null; rm -rf "$work"' EXIT INT TERM
 corpus="$work/corpus"
 weird="$work/weird"
 lnk="$work/lnk"
@@ -21,10 +28,13 @@ vert="$work/vert"
 prn="$work/prn"
 gign="$work/gign"
 inf="$work/inf"
-ASP=./aspen
+ASP="$work/aspen.uut"               # pinned snapshot of ./aspen (set just below)
 
-mkdir -p "$work"
+mkdir -p "$refroot"
 sh "$here/build-ref.sh" 2.3.2 || { echo "GOLDEN: cannot build reference tree"; exit 1; }
+# Pin the binary under test so a concurrent `gmake release` can't swap it mid-run.
+# If ./aspen isn't built, $ASP stays absent and the parity phase is skipped (as before).
+[ -x ./aspen ] && cp ./aspen "$ASP"
 sh "$here/mkcorpus.sh" "$corpus" >/dev/null
 sh "$here/mkweird.sh" "$weird" >/dev/null
 sh "$here/mklnk.sh" "$lnk" >/dev/null

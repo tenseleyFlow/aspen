@@ -10,6 +10,11 @@ ASP=./aspen
 dv="$work/dev"
 fail=0
 
+# SR02-3.2: this script chmod-000's a fixture dir; clean it (and any leftover from
+# a previously-interrupted run) on every exit incl. Ctrl-C, so the next run isn't
+# blocked or falsely red by a permission-denied rm.
+trap 'chmod -R u+rwx "$dv" 2>/dev/null; rm -rf "$dv"' EXIT INT TERM
+
 [ -x "$ASP" ] || { echo "DEVIATIONS: aspen not built"; exit 1; }
 [ -x "$ref" ] || sh tests/golden/build-ref.sh 2.3.2 >/dev/null || { echo "DEVIATIONS: no ref"; exit 1; }
 
