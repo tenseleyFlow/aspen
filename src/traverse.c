@@ -641,6 +641,16 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 
 	read_level(c, d, ev, suppress_pat);
 
+	/* Sort BEFORE the descent loop. The full-tree path defers display sorting to
+	 * emit_level, but -l cycle detection (the inoset add/has below) is order-
+	 * sensitive: tree sorts each level then walks, so a cross-directory recursive
+	 * symlink is resolved against siblings in *sorted* order. Building in raw
+	 * readdir order made the descent decision depend on the filesystem's entry
+	 * order (inode-dependent → nondeterministic 7/4-vs-5/2 under -J/-X/-l). The
+	 * streaming walk_dir already sorts here; build_level must too. emit_level's
+	 * later re-sort is then idempotent (unique names → a stable total order). */
+	asp_sort(ev->v, ev->n, o);
+
 	/* --filelimit: a directory with more than N listable entries is not opened;
 	 * it shows the marker and its contents are skipped. Handled uniformly for a
 	 * child (owner->err, rendered as an error node) and the ROOT itself (SR-2.12:

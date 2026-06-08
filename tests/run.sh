@@ -89,6 +89,14 @@ if [ -f tests/golden/rerun.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# Cross-dir recursive-symlink cycle detection (SR02-0.2): build_level sorts before
+# the descent loop so -l cycle decisions match tree across inode layouts.
+if [ -f tests/golden/cyclic.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/cyclic.sh; then
+		fail=1
+	fi
+fi
+
 # Per-parser-flag golden coverage lint (SR-1.7): every flag has >=1 case.
 if [ -f tests/golden/flag_coverage.sh ]; then
 	if ! sh tests/golden/flag_coverage.sh; then
