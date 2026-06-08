@@ -499,7 +499,16 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
  * subdirectory purely to pull its inode + dir blocks into the kernel cache ahead
  * of the serial DFS, hiding cold I/O latency. It is advisory: read-only syscalls
  * on its own dirfd, no shared aspen state touched, errors ignored — so output
- * stays byte-identical and it is race-free regardless of how it interleaves. */
+ * stays byte-identical and it is race-free regardless of how it interleaves.
+ *
+ * COST (SR02-1.7 / audit L6): this DOUBLES the open/getdents on each prefetched
+ * subdir — the worker reads it once to warm the cache, then the serial walk reads
+ * it again for the authoritative listing. On a WARM cache that is pure overhead
+ * with no benefit (consistent with the retracted 2.3x→1.00x claim); it can only
+ * help genuinely COLD I/O where the worker's read overlaps with the serial walk's
+ * compute. Default-off and experimental for exactly this reason. A future
+ * optimization could hand the worker's drained dirents to the serial consumer to
+ * avoid the second read; kept simple (re-read) until that's shown to pay off. */
 struct prefetch_job {
 	int dirfd;
 	struct entry **ents;
