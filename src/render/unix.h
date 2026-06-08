@@ -19,6 +19,11 @@ struct unix_ctx {
 	const struct options *o;
 	struct colorizer *col;
 	const struct linedraw *ld;
+	/* Precomputed indent glyphs + lengths for the active --compress level, so
+	 * draw_indent appends by length instead of strlen'ing each glyph per line
+	 * (SR02-1.4). */
+	const char *ind_vert, *ind_vleft, *ind_corner, *ind_space;
+	size_t ind_vert_n, ind_vleft_n, ind_corner_n, ind_space_n;
 	/* OSC-8 hyperlinks (--hyperlink) */
 	int hyper;
 	const char *scheme;

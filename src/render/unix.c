@@ -28,6 +28,15 @@ void unix_ctx_init(struct unix_ctx *u, int fd, int mb_cur_max,
 	u->o = o;
 	u->col = col;
 	u->ld = asp_linedraw(o);
+	/* Cache the active-compress-level indent glyphs + lengths once (SR02-1.4). */
+	{
+		static const char *const spaces[3] = { "   ", "  ", " " };
+		int clvl = o->compress_indent;
+		u->ind_vert = u->ld->vert[clvl];       u->ind_vert_n = strlen(u->ind_vert);
+		u->ind_vleft = u->ld->vert_left[clvl]; u->ind_vleft_n = strlen(u->ind_vleft);
+		u->ind_corner = u->ld->corner[clvl];   u->ind_corner_n = strlen(u->ind_corner);
+		u->ind_space = spaces[clvl];           u->ind_space_n = strlen(u->ind_space);
+	}
 	u->last = NULL;
 	u->last_cap = 0;
 
@@ -134,17 +143,21 @@ static void ensure_last(struct unix_ctx *u, int depth)
 
 static void draw_indent(struct unix_ctx *u, int depth, int is_last)
 {
-	/* --compress: narrower connector forms (ld->*[clvl]) + narrower ancestor gap
-	 * (spaces[clvl]); a negative level (remove_space) drops the trailing space. */
-	static const char *spaces[3] = { "   ", "  ", " " };
-	int clvl = u->o->compress_indent;
+	/* --compress: narrower connector forms + narrower ancestor gap, both cached in
+	 * the ctx for the active level (SR02-1.4); remove_space drops the trailing space. */
 	int rs = u->o->remove_space;
 	for (int i = 1; i < depth; i++) {
-		dstr_appendz(&u->out, u->last[i] ? spaces[clvl] : u->ld->vert[clvl]);
+		if (u->last[i])
+			dstr_append(&u->out, u->ind_space, u->ind_space_n);
+		else
+			dstr_append(&u->out, u->ind_vert, u->ind_vert_n);
 		if (!rs)
 			dstr_appendc(&u->out, ' ');
 	}
-	dstr_appendz(&u->out, is_last ? u->ld->corner[clvl] : u->ld->vert_left[clvl]);
+	if (is_last)
+		dstr_append(&u->out, u->ind_corner, u->ind_corner_n);
+	else
+		dstr_append(&u->out, u->ind_vleft, u->ind_vleft_n);
 	if (!rs)
 		dstr_appendc(&u->out, ' ');
 	ensure_last(u, depth);
