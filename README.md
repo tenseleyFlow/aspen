@@ -70,3 +70,9 @@ them as unknown flags.
 - **`ASP_IO=serial|uring`** (env) — pick the stat backend: `serial` forces the inline path; `uring`
   uses Linux `io_uring` `statx` batches when available (else it says so on stderr and falls back to
   the thread pool). Default is the thread pool when a stat-heavy flag is in play.
+- **`ASP_PREFETCH=1`** (env) — cross-directory read-prefetch: fan out `opendir`+`getdents` on each
+  level's subdirectories (via the thread pool) to warm the kernel cache ahead of the serial walk.
+  A **cold-cache** win only — measured ~2.3× faster on a cold 6000-dir tree (and more on
+  HDD/NFS) — so it is off by default: when the cache is already warm it just costs an extra read.
+  Output is byte-identical either way. Currently applies to the streaming (non-`-J/-X/--du/--prune`)
+  path.
