@@ -12,6 +12,15 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+/* THE sole metadata contract (SR02-2.7). Every renderer that needs file metadata
+ * reads ONLY these fields — nothing reaches behind to a raw `struct stat`. Both
+ * stat backends must populate ALL of them for an entry they succeed on:
+ *   - asp_stat_at()  (fstatat baseline, xstat.c)
+ *   - the io_uring statx batch (iouring.c) — its STATX request mask must cover
+ *     every field below, or a renderer sees a stale/zero value on that backend
+ *     only (an invisible, backend-specific divergence).
+ * Add a field here => extend BOTH backends. (atime/nlink were dropped in SR-4.2:
+ * tree displays neither.) */
 struct asp_statinfo {
 	mode_t mode;
 	ino_t ino;
@@ -19,7 +28,7 @@ struct asp_statinfo {
 	off_t size;
 	uid_t uid;
 	gid_t gid;
-	time_t mtime, ctime; /* atime/nlink dropped: tree displays neither (SR-4.2) */
+	time_t mtime, ctime;
 };
 
 enum asp_type asp_type_from_mode(mode_t m);

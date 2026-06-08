@@ -1145,9 +1145,12 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	wctx_scratch_init(&c);
 	c.sp = sp; /* shared stat backend, built once in render_tree (SR-2.5) */
 	/* SR-3.5 cross-dir read-prefetch: opt-in (ASP_PREFETCH), default off so warm
-	 * runs pay nothing. Sized like the stat pool; --threads bounds it too. */
+	 * runs pay nothing. Sized like the stat pool; --threads bounds it too. Only the
+	 * streaming walk_dir prefetches, so don't build the pool for the full-tree
+	 * engines (-J/-X via r->tree, or --du/--prune/--matchdirs/--condense/--filelimit
+	 * via needfulltree) where it would spawn ~N idle threads (SR02-2.5). */
 	c.prefetch = NULL;
-	if (getenv("ASP_PREFETCH")) {
+	if (getenv("ASP_PREFETCH") && r->line && !needfulltree(o)) {
 		int w = (o->threads > 0) ? o->threads : asp_pool_default_workers();
 		if (w > 1)
 			c.prefetch = asp_pool_create(w);

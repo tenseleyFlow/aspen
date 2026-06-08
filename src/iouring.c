@@ -48,7 +48,9 @@ static int is_exec(mode_t m)
 }
 
 /* Map statx into an entry exactly as asp_stat_at maps struct stat, so the two
- * backends are byte-for-byte interchangeable. */
+ * backends are byte-for-byte interchangeable. Populates every field of the sole
+ * metadata contract (struct asp_statinfo, sys/xstat.h) — keep in sync if a field
+ * is added there (SR02-2.7). */
 static void fill_from_statx(struct entry *e, const struct statx *sx, int want_st)
 {
 	dev_t dev = makedev(sx->stx_dev_major, sx->stx_dev_minor);
