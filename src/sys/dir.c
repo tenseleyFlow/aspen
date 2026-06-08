@@ -192,6 +192,11 @@ int asp_dirread(struct asp_dir *d, struct asp_dirent *e)
 		}
 #if defined(ASP_DIR_BACKEND_getdents64)
 		struct linux_dirent64 *de = (void *)(d->buf + d->pos);
+		if (de->d_reclen == 0) { /* defensive: a 0-length record would spin forever
+					  * (mirror the getdirentries backend; corrupt 9p/FUSE/overlay) */
+			d->pos = d->size;
+			continue;
+		}
 		d->pos += de->d_reclen;
 		if (de->d_ino == 0 || is_dotdir(de->d_name))
 			continue;

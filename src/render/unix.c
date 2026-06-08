@@ -286,8 +286,14 @@ static void ux_entry(void *ctx, const struct entry *e, const char *path,
 	 * segment is already the joined chain, set in emit_level). */
 	const char *nm = e->condensed_name ? e->condensed_name : e->name;
 	size_t nmlen = e->condensed_name ? strlen(e->condensed_name) : e->namelen;
-	size_t plen = strlen(path);
-	size_t dirlen = plen - nmlen - 1; /* path minus "/name" */
+	/* plen/dirlen feed ONLY the OSC-8 href (u->hyper) and the -f full-path name
+	 * (o->fullpath); on the default hot path both are unused, so don't strlen the
+	 * whole path per entry (reaudit3 dead-strlen-path-per-entry). */
+	size_t plen = 0, dirlen = 0;
+	if (u->hyper || o->fullpath)
+		plen = strlen(path);
+	if (u->hyper)
+		dirlen = plen - nmlen - 1; /* path minus "/name" */
 
 	/* name: optional OSC-8 link, then color, then the name. */
 	if (u->hyper)

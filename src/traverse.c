@@ -467,8 +467,11 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 			if (want_st) {
 				if (asp_stat_at(dirfd, de.name, 0, &si) == 0) {
 					e->flags |= ENT_STATTED;
-					e->ino = si.ino;
-					e->dev = si.dev;
+					/* e->st is the LINK's own lstat (D4: --inodes/--device show
+					 * the link's metadata). e->ino/e->dev are deliberately NOT
+					 * set here — for a followed link the cycle-set identity must
+					 * be the TARGET's, written once below when the target stats;
+					 * an orphan link is never descended, so its ino is unused. */
 					e->st = arena_memdup(&c->arena, &si, sizeof si);
 				} else {
 					(*c->errors)++;
@@ -1254,8 +1257,11 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		const char *gd = getenv("GIT_DIR");
 		if (gd) {
 			char ex[PATH_MAX + sizeof "/info/exclude"]; /* GIT_DIR path + suffix */
-			snprintf(ex, sizeof ex, "%s/info/exclude", gd);
-			gitstack_push(&c.fstack, gitignore_load_file(gd, ex));
+			int exn = snprintf(ex, sizeof ex, "%s/info/exclude", gd);
+			/* A GIT_DIR longer than PATH_MAX would truncate and then load the
+			 * WRONG file; skip it rather than read a silently-wrong path. */
+			if (exn > 0 && (size_t)exn < sizeof ex)
+				gitstack_push(&c.fstack, gitignore_load_file(gd, ex));
 		}
 	}
 
