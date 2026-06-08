@@ -250,8 +250,10 @@ static void stat_one(void *arg, size_t i)
  * and shared across roots. ASP_IO selects (default/threads=pool, uring=io_uring,
  * serial=inline); only created when some flag actually stats every entry. */
 struct statprov {
-	struct asp_pool *pool; /* NULL = serial (run inline) */
+	struct asp_pool *pool; /* NULL = serial, or pool not spawned yet (lazy) */
 	struct asp_ring *ring; /* NULL = no io_uring */
+	int want_pool;         /* a pool is wanted but deferred to the first big batch */
+	int workers;           /* resolved worker count for the lazy pool */
 };
 
 struct statprov *asp_statprov_create(const struct options *o)
@@ -259,6 +261,8 @@ struct statprov *asp_statprov_create(const struct options *o)
 	struct statprov *sp = asp_xmalloc(sizeof *sp);
 	sp->pool = NULL;
 	sp->ring = NULL;
+	sp->want_pool = 0;
+	sp->workers = 0;
 
 	int stat_heavy = meta_wanted(o) || sort_needs_stat(o) || o->colorize ||
 			 o->classify || o->xdev || o->follow;
@@ -276,8 +280,15 @@ struct statprov *asp_statprov_create(const struct options *o)
 		if (!sp->ring) {
 			int workers = (o->threads > 0) ? o->threads
 						       : asp_pool_default_workers();
-			if (workers > 1)
-				sp->pool = asp_pool_create(workers);
+			if (workers > 1) {
+				/* SR02-1.1: defer the actual pool spawn (threads +,
+				 * on FreeBSD, the libthr dlopen) to the first batch that
+				 * is big enough to parallelize. Low-fanout trees (the
+				 * common `-s ~/project`) never reach the threshold and
+				 * stay fully serial — no spawn, no teardown, no variance. */
+				sp->want_pool = 1;
+				sp->workers = workers;
+			}
 		}
 	}
 	return sp;
@@ -304,6 +315,12 @@ static void statprov_batch(struct statprov *sp, int dirfd, struct entry **ents,
 			return;
 		for (size_t k = 0; k < n; k++)
 			ents[k]->flags &= (uint16_t)~ENT_STAT_FAILED;
+	}
+	/* SR02-1.1: spawn the deferred pool on the first batch that crosses the
+	 * threshold (once — if creation fails we stay serial, no repeated attempts). */
+	if (sp->want_pool && n >= ASP_STAT_PAR_MIN) {
+		sp->want_pool = 0;
+		sp->pool = asp_pool_create(sp->workers);
 	}
 	struct stat_job j = { dirfd, want_st, ents };
 	struct asp_pool *p = (sp->pool && n >= ASP_STAT_PAR_MIN) ? sp->pool : NULL;

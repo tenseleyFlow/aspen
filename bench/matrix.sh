@@ -109,6 +109,10 @@ if [ "$PLAN" = warm ] || [ "$PLAN" = all ]; then
 	for fl in "-a" "-s" "-h" "-p" "-u" "-g" "-D" "-J" "-X" "-C" "--du" "--prune" "-L 2" "-t" "-v" "-U" "-f"; do
 		cell mixed "$fl" C warm
 	done
+	# Table 6: real + stat flags — the soft band where the EAGER stat pool added a
+	# variance tail (low-fanout real trees rarely cross the parallel threshold).
+	# After SR02-1.1 (lazy spawn) it should be a clean win; tracked so it can't regress.
+	[ "$REAL" = 1 ] && for fl in "-s" "-p" "-h" "-D" "--du"; do cell real "$fl" C warm; done
 	# Table 5: locale sweep (sort/name-sensitive) on flat + mixed
 	for lc in C C.UTF-8 en_US.UTF-8; do
 		have_locale "$lc" || continue
