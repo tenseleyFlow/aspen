@@ -186,6 +186,34 @@ static int sort_needs_stat(const struct options *o)
 	return o->sort == SORT_SIZE || o->sort == SORT_MTIME || o->sort == SORT_CTIME;
 }
 
+/* The stat-need invariant, centralized (SR02-2.2 / CLAUDE.md design invariant).
+ * Three distinct questions, each named so a call site can't drift its own tail:
+ *
+ *   want_entry_stat — does THIS entry need its full metadata stat (e->st filled)?
+ *     Metadata column, size/time sort, or colorize. Type-only needs (the -F exec
+ *     bit, -x device id, -l cycle ino/dev) are decided per entry by
+ *     nonlink_needs_stat, NOT here. (read_level, synth_level — note --du is part of
+ *     meta_wanted, so it's covered without a separate term.)
+ *   any_stat_path — will ANY entry be statted on this walk? = want_entry_stat OR a
+ *     type-only need (classify/xdev/follow make nonlink_needs_stat fire). Gates
+ *     building the stat backend in asp_statprov_create: no stats -> no pool/ring.
+ *   root_needs_stat — does the ROOT argument itself need a stat? Its line shows
+ *     metadata, color and the -F type suffix; it is never sorted and its descent
+ *     flags don't affect its own stat — meta/color/classify only.
+ */
+static int want_entry_stat(const struct options *o)
+{
+	return meta_wanted(o) || sort_needs_stat(o) || o->colorize;
+}
+static int any_stat_path(const struct options *o)
+{
+	return want_entry_stat(o) || o->classify || o->xdev || o->follow;
+}
+static int root_needs_stat(const struct options *o)
+{
+	return meta_wanted(o) || o->colorize || o->classify;
+}
+
 /* patterns come from argv (writable), which patmatch needs for its '|' split. */
 static int pat_match_any(const char **pats, size_t n, const char *name, int isdir, int ic)
 {
@@ -264,8 +292,7 @@ struct statprov *asp_statprov_create(const struct options *o)
 	sp->want_pool = 0;
 	sp->workers = 0;
 
-	int stat_heavy = meta_wanted(o) || sort_needs_stat(o) || o->colorize ||
-			 o->classify || o->xdev || o->follow;
+	int stat_heavy = any_stat_path(o);
 	const char *iomode = getenv("ASP_IO");
 	/* --threads 1 (and ASP_IO=serial) force the inline path: the block below is
 	 * skipped, so no pool/ring is ever constructed for a serial run. */
@@ -330,7 +357,7 @@ static void statprov_batch(struct statprov *sp, int dirfd, struct entry **ents,
 static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int suppress_pat)
 {
 	const struct options *o = c->o;
-	int want_st = meta_wanted(o) || sort_needs_stat(o) || o->colorize;
+	int want_st = want_entry_stat(o);
 	int dirfd = asp_dirfd(d);
 	struct asp_dirent de;
 	int r;
@@ -937,7 +964,7 @@ static void emit_level(struct wctx *c, struct entry **arr, int depth)
 static struct entry **synth_level(struct wctx *c, struct fnode *list, int suppress_pat)
 {
 	const struct options *o = c->o;
-	int need_st = meta_wanted(o) || sort_needs_stat(o) || o->duflag || o->colorize;
+	int need_st = want_entry_stat(o); /* --du is part of meta_wanted */
 	struct evec ev = { NULL, 0, 0 };
 
 	for (struct fnode *fn = list; fn; fn = fn->next) {
@@ -1163,7 +1190,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	}
 	struct asp_statinfo rs;
 	const struct asp_statinfo *root_st = NULL;
-	if (meta_wanted(o) || o->colorize || o->classify) {
+	if (root_needs_stat(o)) {
 		if (asp_stat_at(AT_FDCWD, root, 0, &rs) == 0)
 			root_st = &rs;
 	}
