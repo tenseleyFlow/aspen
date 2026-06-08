@@ -24,6 +24,15 @@ void asp_gittrim(char *s)
 			e--;
 	}
 	s[e + 1] = '\0';
+	/* Unescape '\'. NB: a line ending in a lone backslash makes this scan one byte
+	 * PAST the logical terminator (the `i++` skips the '\0', then s[i++] reads the
+	 * next byte). This is tree's own gittrim behaviour (SR02-0.8 / audit L5): it
+	 * stays within the caller's fgets'd PATH_MAX buffer — which is always
+	 * NUL-terminated from a prior read, so the scan halts in-bounds (ASan-clean) —
+	 * and, because aspen and tree share the same fixed-buffer fgets reuse, both
+	 * pick up the identical stale bytes and emit byte-identical output (verified on
+	 * trailing-backslash .gitignore fixtures). Reproduced deliberately, NOT a
+	 * deviation: "fixing" it would stop at the NUL and diverge from tree. */
 	for (i = e = 0; s[i] != '\0';) {
 		if (s[i] == '\\')
 			i++;
