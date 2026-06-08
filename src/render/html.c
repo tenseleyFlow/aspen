@@ -318,7 +318,8 @@ static void html_report(void *ctx, const struct totals *t)
 	dstr_appendz(&h->out, "\n</p>\n");
 }
 
-const struct renderer asp_html_renderer = {
+static const struct line_renderer html_vt = {
 	html_begin, html_root, html_entry, html_error, html_newline, html_comment,
-	html_report, html_end, NULL,
+	html_report, html_end,
 };
+const struct renderer asp_html_renderer = { &html_vt, NULL };

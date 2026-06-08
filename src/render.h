@@ -10,7 +10,10 @@
 
 #include "traverse.h"
 
-struct renderer {
+/* Line-oriented renderers (unix, html): the engine walks the sorted DFS and calls
+ * these as it goes. The error/newline split lets a failed mid-tree directory
+ * append "  [error opening dir]" before the newline, exactly like tree. */
+struct line_renderer {
 	void (*begin)(void *ctx);                       /* document intro (noop for unix) */
 	void (*root)(void *ctx, const char *path, const char *err,
 		     const struct asp_statinfo *st);    /* root line; err!=NULL appended as "  [err]" */
@@ -21,16 +24,27 @@ struct renderer {
 	void (*comment)(void *ctx, const struct entry *e, int depth); /* --info lines after the entry */
 	void (*report)(void *ctx, const struct totals *t);
 	void (*end)(void *ctx);                         /* document outtro */
+};
 
-	/* Nested formats (JSON/XML) set this instead of root/entry/.../comment: the
-	 * engine builds the whole tree and hands each root's subtree here. NULL for
-	 * the line-oriented unix/html renderers. tot is accumulated across roots.
-	 * opened=0 -> failed-open root (lstat-typed, "error opening dir"). limit_err
-	 * != NULL -> a directory root that tripped --filelimit (render it as a dir
-	 * whose only content is that error, counted as one directory). */
+/* Nested renderers (json, xml): the engine builds each root's whole subtree and
+ * hands it off here to count + emit. tot is accumulated across roots. opened=0 ->
+ * failed-open root (lstat-typed, "error opening dir"). limit_err != NULL -> a
+ * directory root that tripped --filelimit (render it as a dir whose only content
+ * is that error, counted as one directory). */
+struct tree_renderer {
+	void (*begin)(void *ctx);
 	void (*tree)(void *ctx, const char *rootpath, const struct asp_statinfo *st,
 		     int opened, const char *limit_err, struct entry **top,
 		     struct totals *tot, int last_root);
+	void (*report)(void *ctx, const struct totals *t);
+	void (*end)(void *ctx);
+};
+
+/* A renderer is exactly one of the two kinds; the engine dispatches on which
+ * pointer is non-NULL (`line` for unix/html, `tree` for json/xml). */
+struct renderer {
+	const struct line_renderer *line;
+	const struct tree_renderer *tree;
 };
 
 /* Orchestrate over the root list: begin, per-root walk, report, end.

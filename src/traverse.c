@@ -473,7 +473,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		else
 			c->tot->files++;
 
-		c->r->entry(c->rctx, e, c->path.data, depth, is_last);
+		c->r->line->entry(c->rctx, e, c->path.data, depth, is_last);
 
 		/* descent decision */
 		int descend = 0;
@@ -507,24 +507,24 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		if (descend) {
 			struct asp_dir *cd;
 			if (asp_diropen_at(dirfd, e->name, &cd) == 0) {
-				c->r->newline(c->rctx);
+				c->r->line->newline(c->rctx);
 				if (e->info)
-					c->r->comment(c->rctx, e, depth);
+					c->r->line->comment(c->rctx, e, depth);
 				walk_dir(c, cd, depth + 1);
 				asp_dirclose(cd);
 			} else {
-				c->r->error(c->rctx, "error opening dir");
-				c->r->newline(c->rctx);
+				c->r->line->error(c->rctx, "error opening dir");
+				c->r->line->newline(c->rctx);
 				if (e->info)
-					c->r->comment(c->rctx, e, depth);
+					c->r->line->comment(c->rctx, e, depth);
 				(*c->errors)++;
 			}
 		} else {
 			if (post_err)
-				c->r->error(c->rctx, post_err);
-			c->r->newline(c->rctx);
+				c->r->line->error(c->rctx, post_err);
+			c->r->line->newline(c->rctx);
 			if (e->info)
-				c->r->comment(c->rctx, e, depth);
+				c->r->line->comment(c->rctx, e, depth);
 		}
 
 		c->path.len = pathlen;
@@ -756,19 +756,19 @@ static void emit_level(struct wctx *c, struct entry **arr, int depth)
 		else
 			c->tot->files++;
 
-		c->r->entry(c->rctx, e, c->path.data, depth, is_last);
+		c->r->line->entry(c->rctx, e, c->path.data, depth, is_last);
 
 		if (e->child) {
-			c->r->newline(c->rctx);
+			c->r->line->newline(c->rctx);
 			if (e->info)
-				c->r->comment(c->rctx, e, depth);
+				c->r->line->comment(c->rctx, e, depth);
 			emit_level(c, e->child, depth + 1);
 		} else {
 			if (e->err)
-				c->r->error(c->rctx, e->err);
-			c->r->newline(c->rctx);
+				c->r->line->error(c->rctx, e->err);
+			c->r->line->newline(c->rctx);
 			if (e->info)
-				c->r->comment(c->rctx, e, depth);
+				c->r->line->comment(c->rctx, e, depth);
 		}
 
 		c->path.len = pathlen;
@@ -865,9 +865,9 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	/* lstat failure (e.g. a nonexistent path-list) is a hard error, like tree. */
 	if (root_st == NULL) {
 		if (r->tree)
-			r->tree(ctx, arg, NULL, 0, NULL, NULL, tot, last_root);
+			r->tree->tree(ctx, arg, NULL, 0, NULL, NULL, tot, last_root);
 		else
-			r->root(ctx, arg, "error opening dir", NULL);
+			r->line->root(ctx, arg, "error opening dir", NULL);
 		(*errors)++;
 		asp_fnode_free(ftop);
 		return;
@@ -905,9 +905,9 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	}
 
 	if (r->tree) {
-		r->tree(ctx, arg, root_st, 1, NULL, top, tot, last_root);
+		r->tree->tree(ctx, arg, root_st, 1, NULL, top, tot, last_root);
 	} else {
-		r->root(ctx, arg, NULL, root_st);
+		r->line->root(ctx, arg, NULL, root_st);
 		tot->dirs++; /* root counts as a directory */
 		emit_level(&c, top, 1);
 	}
@@ -938,9 +938,9 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		const struct asp_statinfo *fst =
 			(asp_stat_at(AT_FDCWD, root, 0, &rs2) == 0) ? &rs2 : NULL;
 		if (r->tree)
-			r->tree(ctx, root, fst, 0, NULL, NULL, tot, last_root);
+			r->tree->tree(ctx, root, fst, 0, NULL, NULL, tot, last_root);
 		else
-			r->root(ctx, root, "error opening dir", fst);
+			r->line->root(ctx, root, "error opening dir", fst);
 		if (fst)
 			tot->files++;
 		else
@@ -1016,7 +1016,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		 * renderer counts entries and emits; we just compute the du total. */
 		struct entry **top = build_level(&c, d, 1, 0, NULL);
 		if (c.root_err) { /* SR-2.12: root itself over --filelimit */
-			r->tree(ctx, root, root_st, 1, c.root_err, NULL, tot, last_root);
+			r->tree->tree(ctx, root, root_st, 1, c.root_err, NULL, tot, last_root);
 		} else {
 			if (o->condense || (o->prune && !o->dirsonly))
 				condense_prune_level(top, &c.arena, o, o->prune && !o->dirsonly);
@@ -1029,12 +1029,12 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 					tot->size = dusum;
 				}
 			}
-			r->tree(ctx, root, root_st, 1, NULL, top, tot, last_root);
+			r->tree->tree(ctx, root, root_st, 1, NULL, top, tot, last_root);
 		}
 	} else if (needfulltree(o)) {
 		struct entry **top = build_level(&c, d, 1, 0, NULL);
 		if (c.root_err) { /* SR-2.12: root itself over --filelimit -> 1 dir */
-			r->root(ctx, root, c.root_err, root_st);
+			r->line->root(ctx, root, c.root_err, root_st);
 			tot->dirs++;
 		} else {
 			if (o->condense || (o->prune && !o->dirsonly))
@@ -1048,7 +1048,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 					tot->size = dusum;
 				}
 			}
-			r->root(ctx, root, NULL, root_st);
+			r->line->root(ctx, root, NULL, root_st);
 			if (top[0]) /* tree counts the root as a directory only when non-empty */
 				tot->dirs++;
 			emit_level(&c, top, 1);
@@ -1058,7 +1058,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 		 * directory only if the walk displayed at least one child (any displayed
 		 * descendant means the root listing was non-empty), matching tree. */
 		unsigned long before = tot->dirs + tot->files;
-		r->root(ctx, root, NULL, root_st);
+		r->line->root(ctx, root, NULL, root_st);
 		walk_dir(&c, d, 1);
 		if (tot->dirs + tot->files > before)
 			tot->dirs++;

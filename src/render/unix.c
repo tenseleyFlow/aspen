@@ -367,7 +367,7 @@ static void ux_end(void *ctx)
 	flush_all((struct unix_ctx *)ctx);
 }
 
-const struct renderer asp_unix_renderer = {
+static const struct line_renderer unix_vt = {
 	ux_begin, ux_root, ux_entry, ux_error, ux_newline, ux_comment, ux_report, ux_end,
-	NULL, /* tree: unix is line-oriented, not nested */
 };
+const struct renderer asp_unix_renderer = { &unix_vt, NULL };

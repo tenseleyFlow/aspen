@@ -336,6 +336,7 @@ static void json_tree(void *ctx, const char *rootpath, const struct asp_statinfo
 	jmaybe(j);
 }
 
-const struct renderer asp_json_renderer = {
-	json_begin, NULL, NULL, NULL, NULL, NULL, json_report, json_end, json_tree,
+static const struct tree_renderer json_vt = {
+	json_begin, json_tree, json_report, json_end,
 };
+const struct renderer asp_json_renderer = { NULL, &json_vt };

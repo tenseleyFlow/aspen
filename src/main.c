@@ -60,10 +60,10 @@ static void dbg_entry(void *c, const struct entry *e, const char *path, int dept
 	(void)last;
 	printf("%c\t%s\n", type_char((enum asp_type)e->type), path);
 }
-static const struct renderer DEBUG_RENDERER = {
+static const struct line_renderer DEBUG_VT = {
 	dbg_noop, dbg_root, dbg_entry, dbg_error, dbg_newline, dbg_comment, dbg_report, dbg_noop,
-	NULL,
 };
+static const struct renderer DEBUG_RENDERER = { &DEBUG_VT, NULL };
 
 int main(int argc, char **argv)
 {

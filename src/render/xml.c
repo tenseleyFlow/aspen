@@ -311,6 +311,7 @@ static void xml_tree(void *ctx, const char *rootpath, const struct asp_statinfo 
 	xmaybe(x);
 }
 
-const struct renderer asp_xml_renderer = {
-	xml_begin, NULL, NULL, NULL, NULL, NULL, xml_report, xml_end, xml_tree,
+static const struct tree_renderer xml_vt = {
+	xml_begin, xml_tree, xml_report, xml_end,
 };
+const struct renderer asp_xml_renderer = { NULL, &xml_vt };
