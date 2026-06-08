@@ -341,22 +341,32 @@ void options_parse(int argc, char **argv, struct options *o,
 				case 'I': add_pat(&o->ipatterns, &o->nipat, &o->ipatcap,
 						  short_arg(a, &j, &i, argc, argv, "-I")); break;
 				case 'L': {
-					long lv;
+					const char *s;
+					char buf[32];
 					if (isdigit((unsigned char)a[j + 1])) {
-						char buf[32];
 						size_t k = 0;
 						while (a[j + 1] && isdigit((unsigned char)a[j + 1]) &&
 						       k < sizeof buf - 1)
 							buf[k++] = a[++j];
 						buf[k] = '\0';
-						lv = strtol(buf, NULL, 0);
+						s = buf;
 					} else {
-						lv = strtol(need_arg(&i, argc, argv, "-L"), NULL, 0);
+						s = need_arg(&i, argc, argv, "-L");
 						j = strlen(a) - 1;
 					}
-					if (lv < 1)
+					/* tree: Level = (int)strtoul(s,NULL,0) - 1; error if < 0. The
+					 * (int) cast is load-bearing — it wraps huge values exactly as
+					 * tree does (base 0 => 0x/0 octal accepted; trailing junk
+					 * ignored, both like tree), so aspen matches tree for every
+					 * well-defined input. The `- 1` is done in long so aspen never
+					 * itself hits signed-overflow UB at the exact INT_MIN boundary
+					 * (e.g. -L 2147483648), where tree's own `(int)-1` is UB and the
+					 * result is compiler-defined garbage — excluded from parity like
+					 * the other UB cases (CLAUDE.md). aspen stores level 1-indexed. */
+					long lvl = (long)(int)strtoul(s, NULL, 0) - 1;
+					if (lvl < 0)
 						die_msg("Invalid level, must be greater than 0.");
-					o->level = lv;
+					o->level = lvl + 1;
 					break;
 				}
 				default:

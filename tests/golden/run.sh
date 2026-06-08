@@ -332,6 +332,10 @@ CASES='%C
 -X %E
 --noreport %E
 -L 0 %C
+-L 0x2 %C
+-L 010 %C
+-L 5x %C
+-L abc %C
 -L
 /no/such/path-xyz'
 
