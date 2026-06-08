@@ -50,6 +50,7 @@ struct wctx {
 	dev_t root_dev;
 	const char *root_err;      /* SR-2.12: set if the root itself tripped --filelimit */
 	struct statprov *sp;       /* metadata-stat backend seam (serial/pool/uring) */
+	struct asp_pool *prefetch; /* SR-3.5: opt-in cross-dir read-prefetch pool, or NULL */
 
 	/* Reusable scratch — kept across the whole walk so a level pays no per-dir
 	 * malloc (the "arena, no malloc churn" budget). One entry-vector per active
@@ -471,6 +472,31 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 	}
 }
 
+/* SR-3.5 cross-dir read-prefetch (opt-in, ASP_PREFETCH). A worker opens+drains a
+ * subdirectory purely to pull its inode + dir blocks into the kernel cache ahead
+ * of the serial DFS, hiding cold I/O latency. It is advisory: read-only syscalls
+ * on its own dirfd, no shared aspen state touched, errors ignored — so output
+ * stays byte-identical and it is race-free regardless of how it interleaves. */
+struct prefetch_job {
+	int dirfd;
+	struct entry **ents;
+};
+
+static void prefetch_one(void *arg, size_t i)
+{
+	struct prefetch_job *j = arg;
+	struct entry *e = j->ents[i];
+	if (e->type != ASP_DIR) /* only real dirs; symlinks/files aren't descended-read */
+		return;
+	struct asp_dir *cd;
+	if (asp_diropen_at(j->dirfd, e->name, &cd) != 0)
+		return; /* advisory: ignore failures, the serial walk reports them */
+	struct asp_dirent de;
+	while (asp_dirread(cd, &de) == 1)
+		; /* drain to warm the directory's data blocks */
+	asp_dirclose(cd);
+}
+
 static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 {
 	struct arena_marker mk = arena_mark(&c->arena);
@@ -490,6 +516,16 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 	 * v buffer — so these locals stay valid across the child walk below. */
 	struct entry **vec = ev->v;
 	size_t n = ev->n;
+
+	/* SR-3.5: before the serial descent, fan out reads of this level's
+	 * subdirectories to warm the cache (only when we will actually descend).
+	 * Cache-warming only — the loop below still produces the authoritative
+	 * ordered output, now hitting warm pages. Opt-in; default off. */
+	if (c->prefetch && n > 1 && (o->level < 0 || depth < o->level)) {
+		struct prefetch_job pj = { dirfd, vec };
+		asp_pool_for(c->prefetch, n, prefetch_one, &pj);
+	}
+
 	for (size_t i = 0; i < n; i++) {
 		struct entry *e = vec[i];
 		int is_last = (i + 1 == n);
@@ -927,6 +963,7 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	c.istack = NULL;
 	c.info_top = 0;
 	c.sp = NULL; /* synthetic entries carry their own stat; no real lstat */
+	c.prefetch = NULL; /* fromfile is synthetic; nothing to read-prefetch */
 	wctx_scratch_init(&c);
 	inoset_init(&c.seen);
 
@@ -1003,6 +1040,14 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	inoset_init(&c.seen);
 	wctx_scratch_init(&c);
 	c.sp = sp; /* shared stat backend, built once in render_tree (SR-2.5) */
+	/* SR-3.5 cross-dir read-prefetch: opt-in (ASP_PREFETCH), default off so warm
+	 * runs pay nothing. Sized like the stat pool; --threads bounds it too. */
+	c.prefetch = NULL;
+	if (getenv("ASP_PREFETCH")) {
+		int w = (o->threads > 0) ? o->threads : asp_pool_default_workers();
+		if (w > 1)
+			c.prefetch = asp_pool_create(w);
+	}
 
 	/* Bottom of the filter stack: an explicit --gitfile and, with --gitignore,
 	 * $GIT_DIR/info/exclude. (The implicit parent-.gitignore walk is deferred.) */
@@ -1102,6 +1147,7 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	asp_dirclose(d);
 	gitstack_flush(&c.fstack); /* c.sp is owned by render_tree, not freed here */
 	infostack_flush(&c.istack);
+	asp_pool_destroy(c.prefetch); /* SR-3.5: per-walk prefetch pool (NULL = no-op) */
 	wctx_scratch_free(&c);
 	inoset_destroy(&c.seen);
 	dstr_free(&c.path);
