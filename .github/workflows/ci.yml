@@ -45,6 +45,9 @@ jobs:
             echo "liburing not detected — skipping io_uring gate"
           fi
 
+      - name: Prefetch parity (ASP_PREFETCH cross-dir read-prefetch, SR-3.5)
+        run: ASP_PREFETCH=1 make test
+
       - name: Sanitizer build (ASan/UBSan)
         run: make debug
 
@@ -65,6 +68,7 @@ jobs:
             ./configure
             gmake CFLAGS="-O2 -Werror"
             gmake test
+            ASP_PREFETCH=1 gmake test   # SR-3.5 prefetch parity (FreeBSD dlopen-libthr path)
 
   # musl libc (static-release target) via musl-gcc on the Linux runner. (An
   # Alpine container can't host the node-based actions — checkout needs glibc.)
@@ -83,3 +87,5 @@ jobs:
           make CFLAGS="-O2 -Werror"
       - name: Unit + golden parity tests
         run: make test
+      - name: Prefetch parity (ASP_PREFETCH, SR-3.5 — musl pthread)
+        run: ASP_PREFETCH=1 make test
