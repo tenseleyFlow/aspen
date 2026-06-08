@@ -68,6 +68,10 @@ chk "gitfile-noarg"   1 --gitfile
 # list to stderr before exit 1 (tree's initlinedraw(true)); "--charset=" does not.
 chk "charset-noarg"   1 --charset
 
+# SR02-0.7 (L4): an invalid --sort value splits streams — the prefix (no newline)
+# on stderr, the valid-types list on STDOUT (tree.c:464). chk compares both streams.
+chk "sort-badval"     1 --sort badval
+
 # --version: aspen's own line, exit 0. Format-assert (not vs tree).
 "$ASP" --version >"$work/u.ver" 2>&1; vrc=$?
 if [ "$vrc" != 0 ]; then echo "USAGE: --version rc=$vrc (expected 0)"; fail=1; fi

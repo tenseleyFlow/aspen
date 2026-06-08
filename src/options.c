@@ -237,8 +237,11 @@ static void set_sort(struct options *o, const char *name)
 			o->sort = tbl[i].k;
 			return;
 		}
-	fprintf(stderr, "%s: Sort type '%s' not valid, should be one of: "
-			"name,version,size,mtime,ctime,none\n", ASP_PROGNAME, name);
+	/* tree splits this across streams (tree.c:464): the prefix (no newline) on
+	 * stderr, the valid-types list on STDOUT, comma-separated with a trailing
+	 * newline. A consumer redirecting one stream must see the same bytes. */
+	fprintf(stderr, "%s: Sort type '%s' not valid, should be one of: ", ASP_PROGNAME, name);
+	printf("name,version,size,mtime,ctime,none\n");
 	exit(1);
 }
 
