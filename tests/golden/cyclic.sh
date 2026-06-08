@@ -28,6 +28,7 @@ mkfix() {
 	ln -s ../..   "$cy/a/sub/up"    # self-loop back to root
 	ln -s ../../a "$cy/b/sub/toa"   # cross-dir: b/sub -> a
 	ln -s ../b    "$cy/a/tob"       # cross-dir: a -> b
+	ln -s a/sub   "$cy/blink"       # A2: symlink to a dir that is the -L 2 boundary
 }
 
 count_json() { grep -o '"directories":[0-9]*,"files":[0-9]*'; }
@@ -36,8 +37,10 @@ i=0
 while [ "$i" -lt "$N" ]; do
 	i=$((i + 1))
 	mkfix
-	# full byte parity for -l (text), -J and -X across each inode layout
-	for fmt in "" "-J" "-X"; do
+	# full byte parity for -l (text), -J and -X across each inode layout, plus the
+	# A2 boundary-symlink case under -L (a symlink to a dir halted at the -L limit
+	# must still be marked "recursive, not followed" — tree saveino's it first).
+	for fmt in "" "-J" "-X" "-L 2" "-L 1" "-L 2 -J" "-L 2 -X"; do
 		"$ref" -l $fmt "$cy" >"$cy/.r" 2>&1; "$ASP" -l $fmt "$cy" >"$cy/.a" 2>&1
 		if ! diff "$cy/.r" "$cy/.a" >/dev/null; then
 			echo "CYCLIC[-l ${fmt:-text} iter $i]: differs from tree"; diff "$cy/.r" "$cy/.a" | sed -n '1,10p'; fail=1; break 2

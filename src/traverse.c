@@ -569,32 +569,41 @@ static int decide_descent(struct wctx *c, struct entry *e, int depth,
 	const struct options *o = c->o;
 	*post_err = NULL;
 	*at_boundary = 0;
-	int descend = (e->type == ASP_DIR) ||
-		      (o->follow && e->type == ASP_LNK && e->ltype == ASP_DIR);
-	/* xdev-excluded dirs neither descend nor (under -R) rerun. */
-	if (descend && o->xdev && e->type == ASP_DIR && e->dev != c->root_dev)
-		descend = 0;
-	/* The -L limit: an otherwise-eligible, non-excluded dir stopped here is the
-	 * -R boundary (tree list.c:209). */
-	if (descend && o->level >= 0 && depth >= o->level) {
-		*at_boundary = 1;
-		descend = 0;
-	}
-	/* -l cycle detection: only a SYMLINK whose target inode was already seen is
-	 * "recursive, not followed"; a real directory revisited via a symlink (or
-	 * hardlink) is still descended. Seed the set with every descended dir so a
-	 * later symlink pointing at it is caught. */
-	if (descend && o->follow) {
-		if (e->type == ASP_LNK) {
-			if (inoset_has(&c->seen, e->ino, e->dev)) {
+	int dir_like = (e->type == ASP_DIR) ||
+		       (o->follow && e->type == ASP_LNK && e->ltype == ASP_DIR);
+	if (!dir_like)
+		return 0;
+	int descend = 1;
+
+	/* -l cycle set. tree records EVERY directory's inode (saveino) BEFORE any
+	 * descend/xdev/-L check, so a directory halted at the -L boundary (or excluded
+	 * by -x) still blocks a later symlink pointing at it (audit A2). Only a SYMLINK
+	 * whose target inode was already seen is "recursive, not followed"; a real
+	 * directory revisited via a symlink/hardlink is still descended. e->ino/e->dev
+	 * is the target's for a followed symlink (read_level). */
+	if (o->follow) {
+		if (inoset_has(&c->seen, e->ino, e->dev)) {
+			if (e->type == ASP_LNK) {
 				*post_err = "recursive, not followed";
 				descend = 0;
-			} else {
-				inoset_add(&c->seen, e->ino, e->dev);
 			}
 		} else {
 			inoset_add(&c->seen, e->ino, e->dev);
 		}
+	}
+
+	/* xdev-excluded dirs neither descend nor (under -R) rerun — but are still in
+	 * the inode set above (tree's saveino precedes its xdev guard). */
+	if (o->xdev && e->type == ASP_DIR && e->dev != c->root_dev)
+		return 0;
+
+	/* The -L limit: an otherwise-eligible, non-excluded dir stopped here is the -R
+	 * boundary (tree list.c:209); tree clears the "recursive" err at the boundary
+	 * (list.c:204). */
+	if (o->level >= 0 && depth >= o->level) {
+		*at_boundary = 1;
+		*post_err = NULL;
+		descend = 0;
 	}
 	return descend;
 }
