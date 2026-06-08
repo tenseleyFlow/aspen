@@ -16,10 +16,12 @@
 #include "sys/dir.h"
 #include "sys/xstat.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -131,6 +133,29 @@ static void wctx_scratch_free(struct wctx *c)
 static int is_exec(mode_t m)
 {
 	return (m & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0;
+}
+
+/* Deferred fd-limit bump (SR-3.9). The fd-relative walk holds one dir fd per
+ * active depth, so a very deep tree can exhaust the soft RLIMIT_NOFILE. Instead
+ * of bumping at startup (a syscall pair on every run), raise the soft limit to
+ * the hard limit lazily — only when a descent actually fails with EMFILE/ENFILE
+ * — then retry the open once. Trivial and shallow runs pay nothing. One-shot;
+ * the main thread is the only opener (the pool only stats). */
+static int g_fdlimit_raised;
+
+static int diropen_at_deep(int dirfd, const char *name, struct asp_dir **cd)
+{
+	int r = asp_diropen_at(dirfd, name, cd);
+	if (r == 0 || g_fdlimit_raised || (errno != EMFILE && errno != ENFILE))
+		return r;
+	g_fdlimit_raised = 1;
+	struct rlimit rl;
+	if (getrlimit(RLIMIT_NOFILE, &rl) == 0 && rl.rlim_cur < rl.rlim_max) {
+		rl.rlim_cur = rl.rlim_max;
+		if (setrlimit(RLIMIT_NOFILE, &rl) == 0)
+			r = asp_diropen_at(dirfd, name, cd); /* retry with headroom */
+	}
+	return r;
 }
 
 /* Non-symlink entries stat only when a flag needs the metadata. (Symlinks are
@@ -512,7 +537,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 
 		if (descend) {
 			struct asp_dir *cd;
-			if (asp_diropen_at(dirfd, e->name, &cd) == 0) {
+			if (diropen_at_deep(dirfd, e->name, &cd) == 0) {
 				c->r->line->newline(c->rctx);
 				if (e->info)
 					c->r->line->comment(c->rctx, e, depth);
@@ -629,7 +654,7 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 
 		if (descend) {
 			struct asp_dir *cd;
-			if (asp_diropen_at(dirfd, e->name, &cd) == 0) {
+			if (diropen_at_deep(dirfd, e->name, &cd) == 0) {
 				/* track path for child .gitignore + filtercheck */
 				dstr_appendc(&c->path, '/');
 				dstr_append(&c->path, e->name, e->namelen);

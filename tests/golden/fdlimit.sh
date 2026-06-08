@@ -1,10 +1,11 @@
 #!/bin/sh
 # Deep-tree fd robustness (Sprint 11c). The walk holds one open dir fd per active
 # depth (fd-relative openat — the speed lever), so a deep chain can exceed the
-# soft open-file limit. aspen raises its soft RLIMIT_NOFILE to the hard limit at
-# startup, so it descends as deep as the system allows. This checks that a deep
-# chain under a low SOFT limit still completes (rc 0) with identical output —
-# where the un-bumped walk would have errored (rc 2) partway down.
+# soft open-file limit. aspen raises its soft RLIMIT_NOFILE to the hard limit
+# lazily — on the first descent that hits EMFILE (SR-3.9), so shallow runs pay no
+# rlimit syscalls — then retries and descends as deep as the system allows. This
+# checks that a deep chain under a low SOFT limit still completes (rc 0) with
+# identical output — where the un-bumped walk would have errored (rc 2) partway down.
 set -u
 
 work=tests/.work
