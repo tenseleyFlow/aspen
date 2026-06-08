@@ -234,6 +234,39 @@ static int pat_match_any(const char **pats, size_t n, const char *name, int isdi
 	return 0;
 }
 
+/* tree 2.3.2 -P/-I matching (file.c:132, `patinclude(name,false) ||
+ * patinclude(fpath,true)`): a pattern matches an entry if it matches the BASENAME,
+ * the FULL PATH from the walk root, OR any '/'-suffix of that path. (aspen was
+ * first ported from tree 2.2.1, which matched the basename only — so any pattern
+ * containing '/' silently matched nothing; audit A4.) `c->path` is the entry's
+ * PARENT directory here; append the name to form the full path, match, restore. */
+static int pat_match_full(struct wctx *c, const char **pats, size_t n,
+			  const char *name, size_t namelen, int isdir)
+{
+	int ic = c->o->ignorecase;
+	size_t save = c->path.len;
+	dstr_appendc(&c->path, '/');
+	dstr_append(&c->path, name, namelen);
+	const char *fpath = c->path.data;
+	int matched = 0;
+	for (size_t i = 0; i < n && !matched; i++) {
+		char *pat = (char *)pats[i];
+		if (asp_patmatch(name, pat, isdir, ic) != 0 ||
+		    asp_patmatch(fpath, pat, isdir, ic) != 0) {
+			matched = 1;
+			break;
+		}
+		for (const char *pc = strchr(fpath, '/'); pc && *pc; pc = strchr(pc + 1, '/'))
+			if (asp_patmatch(pc + 1, pat, isdir, ic) != 0) {
+				matched = 1;
+				break;
+			}
+	}
+	c->path.len = save;
+	c->path.data[save] = '\0';
+	return matched;
+}
+
 static void fill_link(struct wctx *c, int dirfd, struct entry *e)
 {
 	char buf[PATH_MAX]; /* a symlink target is bounded by PATH_MAX */
@@ -466,13 +499,13 @@ static void read_level(struct wctx *c, struct asp_dir *d, struct evec *ev, int s
 
 		/* -P applies to non-dirs only (dirs always pass so we can descend),
 		 * unless -l makes a symlink dir-like; suppressed by --matchdirs. -I
-		 * applies to everything. Names match by basename (tree). */
+		 * applies to everything. Match basename + full path + path suffixes (A4). */
 		if (!suppress_pat && o->npat &&
 		    t != ASP_DIR && !(o->follow && t == ASP_LNK && e->ltype == ASP_DIR) &&
-		    !pat_match_any(o->patterns, o->npat, de.name, isdir, o->ignorecase))
+		    !pat_match_full(c, o->patterns, o->npat, de.name, de.namelen, isdir))
 			continue;
 		if (o->nipat &&
-		    pat_match_any(o->ipatterns, o->nipat, de.name, isdir, o->ignorecase))
+		    pat_match_full(c, o->ipatterns, o->nipat, de.name, de.namelen, isdir))
 			continue;
 		if (o->dirsonly && !isdir)
 			continue;
@@ -781,7 +814,7 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 		 * unfiltered and is protected from --prune. */
 		int child_suppress = suppress_pat;
 		if (o->matchdirs && o->npat && dir_like &&
-		    pat_match_any(o->patterns, o->npat, e->name, 1, o->ignorecase)) {
+		    pat_match_full(c, o->patterns, o->npat, e->name, e->namelen, 1)) {
 			e->flags |= ENT_MATCHED;
 			child_suppress = 1;
 		}

@@ -105,6 +105,13 @@ if [ -f tests/golden/adversarial.sh ] && [ -x ./aspen ]; then
 	fi
 fi
 
+# Slashed -P/-I pattern parity (audit A4): match basename + full path + suffixes.
+if [ -f tests/golden/patterns.sh ] && [ -x ./aspen ]; then
+	if ! sh tests/golden/patterns.sh; then
+		fail=1
+	fi
+fi
+
 # Per-parser-flag golden coverage lint (SR-1.7): every flag has >=1 case.
 if [ -f tests/golden/flag_coverage.sh ]; then
 	if ! sh tests/golden/flag_coverage.sh; then
