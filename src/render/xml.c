@@ -159,6 +159,11 @@ static void xemit_level(struct xml_ctx *x, struct entry **arr, int depth, struct
 				dstr_appendz(&x->out, "<error>");
 				dstr_appendz(&x->out, e->err);
 				dstr_appendz(&x->out, "</error>");
+				/* tree's xml_close indents the close tag by the close-level: a
+				 * "recursive, not followed" symlink is descend==-1 -> xml_indent(lev)
+				 * (depth-scaled, like the entry); an unreadable dir passes -1 -> none. */
+				if (e->flags & ENT_RECURSIVE)
+					xindent(x, depth);
 			}
 			dstr_appendz(&x->out, "</");
 			dstr_appendz(&x->out, tag);

@@ -735,7 +735,12 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 				(*c->errors)++;
 			}
 		} else if (post_err) {
+			/* post_err here is only ever "recursive, not followed" (the
+			 * inoset cycle case); flag it so -J/-X close it with a
+			 * depth-scaled indent like tree (descend==-1), not the fixed
+			 * unreadable-dir close. */
 			e->err = post_err;
+			e->flags |= ENT_RECURSIVE;
 		}
 	}
 

@@ -21,6 +21,9 @@ enum {
 	ENT_LEXEC   = 1u << 3, /* symlink target is executable (-F) */
 	ENT_MATCHED = 1u << 4, /* --matchdirs: dir name matched -P (prune-protected) */
 	ENT_STAT_FAILED = 1u << 5, /* deferred stat pass: lstat failed; drop in order */
+	ENT_RECURSIVE = 1u << 6,   /* -l: symlink target already seen ("recursive, not
+				    * followed"). tree's descend==-1 -> a depth-scaled close
+				    * indent in -J/-X, vs an unreadable dir's fixed close. */
 };
 
 struct entry {

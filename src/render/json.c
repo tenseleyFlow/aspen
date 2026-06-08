@@ -190,12 +190,16 @@ static void jemit_level(struct json_ctx *j, struct entry **arr, int depth, struc
 			dstr_appendz(&j->out, last ? "" : ",");
 			dstr_appendz(&j->out, jnl(j));
 		} else if (direrr) {
-			/* unreadable / filelimit dir: tree emits the error inline and closes
-			 * with json_indent(-1) == 4 spaces (no newline) — list.c close(lev=-1). */
+			/* tree closes the error contents with json_indent(close-level): an
+			 * unreadable/filelimit dir passes -1 (the fixed one-unit close), but a
+			 * "recursive, not followed" symlink is descend==-1 -> json_indent(lev),
+			 * a depth-scaled close matching the entry's own indent (M1). */
 			dstr_appendz(&j->out, ",\"contents\":[{\"error\": \"");
 			dstr_appendz(&j->out, e->err);
 			dstr_appendz(&j->out, "\"}");
-			if (!j->o->noindent)
+			if (e->flags & ENT_RECURSIVE)
+				jindent(j, depth); /* tree's json_indent(lev), noindent-aware */
+			else if (!j->o->noindent)
 				dstr_appendz(&j->out, junit(j)); /* tree's json_indent(-1) */
 			dstr_appendz(&j->out, "]}");
 			dstr_appendz(&j->out, last ? "" : ",");
