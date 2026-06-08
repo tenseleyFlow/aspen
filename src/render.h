@@ -2,10 +2,10 @@
 #define ASP_RENDER_H
 
 /*
- * Output renderer interface — a small vtable mirroring tree's listingcalls. The
- * default unix renderer (render/unix.c) is the hot path; JSON/XML/HTML slot in
- * at Sprint 09. The line/error/newline split lets a failed mid-tree directory
- * append "  [error opening dir]" before the newline, exactly like tree.
+ * Output renderer interface — function-pointer vtables mirroring tree's
+ * listingcalls, in two kinds: line-oriented (unix is the hot path, html) and
+ * nested (json, xml). The line error/newline split lets a failed mid-tree
+ * directory append "  [error opening dir]" before the newline, exactly like tree.
  */
 
 #include "traverse.h"

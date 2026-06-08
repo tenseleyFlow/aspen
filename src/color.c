@@ -108,7 +108,7 @@ void color_init(struct colorizer *c, const struct options *o, int outfd)
 	c->ext = NULL;
 	c->buf = NULL;
 
-	if (o->format != OUT_UNIX) /* tree skips color for -H; other formats later */
+	if (o->format != OUT_UNIX) /* color is unix-only; tree skips it for -H/-J/-X */
 		return;
 
 	int nocolor = o->nocolor;

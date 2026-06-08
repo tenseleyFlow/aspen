@@ -8,10 +8,14 @@ every workload. Binaries: `aspen` and `asp`.
 
 ## Status
 
-Early development. The core thesis is validated: a proof-of-concept that reads directories with
-`getdents`/`d_type` and **skips the per-entry `stat` that tree always pays** is byte-identical to
-`tree` on a static tree and **~5× faster** (40k-file corpus, warm cache, single-threaded, no
-arena/io_uring yet — the conservative floor). Build it out per the sprints below.
+Feature-complete against tree 2.3.2's flag surface and byte-for-byte identical, enforced by a
+golden parity suite (hundreds of cases × C / C.UTF-8 / a dictionary UTF-8 locale) plus a
+differential fuzzer, run in CI on Ubuntu, macOS, FreeBSD, and musl/Alpine (and an io_uring job).
+The speed thesis held and compounded: skipping the per-entry `stat` tree always pays (`getdents` +
+`d_type`), arena allocation with inline names, batched `write`, an MSD byte-radix name sort, and an
+opt-in stat-parallel backend (thread pool / io_uring) put it around **6–11× faster** than tree on
+the standard corpora — enforced by a CI perf gate that fails any build slower than tree. Where tree
+has a genuine bug, aspen does the correct thing instead and documents the deviation.
 
 ## Build
 

@@ -1,7 +1,8 @@
 #!/bin/sh
-# aspen test driver. Runs unit tests now; the golden parity suite is appended
-# by a later Sprint-00 chunk (tests/golden/). Each unit test links against all
-# library sources (everything in src/ except main.c) so cross-module deps resolve.
+# aspen test driver. Runs the unit tests, then the golden parity suite and the
+# rest of tests/golden/ (fuzzer, deviations, flag/usage/structural lints, perf).
+# Each unit test links against all library sources (everything in src/ except
+# main.c) so cross-module deps resolve.
 set -u
 
 CC=${CC:-cc}

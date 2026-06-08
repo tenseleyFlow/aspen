@@ -2,9 +2,9 @@
 #define ASP_SYS_XSTAT_H
 
 /*
- * stat abstraction — the serial provider's metadata path. Only called when a
- * flag needs metadata or d_type was UNKNOWN (.docs/audits/03 §3). statx with a
- * minimal mask (Linux) is wired in a later sprint; this is the fstatat baseline.
+ * stat abstraction — the metadata path. Only called when a flag needs metadata
+ * or d_type was UNKNOWN (.docs/audits/03 §3). asp_stat_at is the fstatat
+ * baseline; the io_uring backend (iouring.c) issues statx batches when enabled.
  */
 
 #include "sys/dir.h" /* enum asp_type */

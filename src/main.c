@@ -1,8 +1,9 @@
 /* aspen — entry point.
  *
- * Sprint 03: full option parser + listing flags. main filters the test-only
- * --asp-debug-walk hook, parses the rest with the tree-compatible parser, and
- * dispatches to the unix renderer. Diagnostics say "aspen"; see .docs/.
+ * Sets up the locale, filters the test-only --asp-debug-walk hook, parses argv
+ * with the tree-compatible parser, picks the renderer for the output format
+ * (unix/json/xml/html), opens -o FILE if given, and runs render_tree.
+ * Diagnostics say "aspen"; see .docs/.
  */
 #include <fcntl.h>
 #include <locale.h>
