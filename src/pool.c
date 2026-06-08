@@ -195,11 +195,6 @@ void asp_pool_destroy(struct asp_pool *p)
 	free(p);
 }
 
-int asp_pool_width(const struct asp_pool *p)
-{
-	return p ? p->nworkers + 1 : 1;
-}
-
 void asp_pool_for(struct asp_pool *p, size_t n, void (*fn)(void *, size_t), void *arg)
 {
 	if (n == 0)

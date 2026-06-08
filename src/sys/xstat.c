@@ -28,8 +28,6 @@ int asp_stat_at(int dirfd, const char *name, int follow, struct asp_statinfo *o)
 	o->size = st.st_size;
 	o->uid = st.st_uid;
 	o->gid = st.st_gid;
-	o->nlink = st.st_nlink;
-	o->atime = st.st_atime;
 	o->mtime = st.st_mtime;
 	o->ctime = st.st_ctime;
 	return 0;

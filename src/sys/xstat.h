@@ -19,8 +19,7 @@ struct asp_statinfo {
 	off_t size;
 	uid_t uid;
 	gid_t gid;
-	nlink_t nlink;
-	time_t atime, mtime, ctime;
+	time_t mtime, ctime; /* atime/nlink dropped: tree displays neither (SR-4.2) */
 };
 
 enum asp_type asp_type_from_mode(mode_t m);

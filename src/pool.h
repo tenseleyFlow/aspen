@@ -25,9 +25,6 @@ struct asp_pool;
 struct asp_pool *asp_pool_create(int workers);
 void asp_pool_destroy(struct asp_pool *p);
 
-/* Number of parallel lanes (worker threads + 1 for the caller). */
-int asp_pool_width(const struct asp_pool *p);
-
 /* Run fn(arg, i) for i in [0, n). Blocks until all iterations finish. */
 void asp_pool_for(struct asp_pool *p, size_t n, void (*fn)(void *, size_t), void *arg);
 

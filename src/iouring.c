@@ -65,8 +65,6 @@ static void fill_from_statx(struct entry *e, const struct statx *sx, int want_st
 		si->size = (off_t)sx->stx_size;
 		si->uid = sx->stx_uid;
 		si->gid = sx->stx_gid;
-		si->nlink = sx->stx_nlink;
-		si->atime = sx->stx_atime.tv_sec;
 		si->mtime = sx->stx_mtime.tv_sec;
 		si->ctime = sx->stx_ctime.tv_sec;
 	}

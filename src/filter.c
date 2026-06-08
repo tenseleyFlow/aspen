@@ -54,7 +54,7 @@ static int is_file(const char *path)
 static struct ignorefile *parse(const char *basepath, FILE *fp)
 {
 	char buf[PATH_MAX];
-	struct gpattern *remove = NULL, *remend = NULL, *reverse = NULL, *revend = NULL;
+	struct gpattern *rmlist = NULL, *remend = NULL, *reverse = NULL, *revend = NULL;
 
 	while (fgets(buf, sizeof buf, fp) != NULL) {
 		if (buf[0] == '#')
@@ -68,13 +68,13 @@ static struct ignorefile *parse(const char *basepath, FILE *fp)
 			if (!reverse) reverse = revend = p;
 			else { revend->next = p; revend = p; }
 		} else {
-			if (!remove) remove = remend = p;
+			if (!rmlist) rmlist = remend = p;
 			else { remend->next = p; remend = p; }
 		}
 	}
 
 	struct ignorefile *ig = asp_xmalloc(sizeof *ig);
-	ig->remove = remove;
+	ig->remove = rmlist;
 	ig->reverse = reverse;
 	size_t bn = strlen(basepath) + 1;
 	ig->path = asp_xmalloc(bn);
