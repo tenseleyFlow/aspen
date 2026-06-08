@@ -124,6 +124,33 @@ elif ! grep -q '├' "$nf6"; then
 	grep -nE 'aaa|f2' "$nf6" | sed -n '1,4p'; fail=1
 fi
 
+# D7: -l already-visited detection is deterministic (sorted) in every mode. tree's
+# full-tree modes (-J/-X/--du/--condense/...) run the visited-check in raw readdir
+# order, so a symlink to a real dir that also appears in the walk is followed or
+# not depending on inode layout -> nondeterministic + inconsistent with tree's own
+# streaming -l. aspen sorts in both engines, so full-tree -l == streaming -l == the
+# sorted truth (= tree's streaming -l), every layout. Assert that here.
+# pull the report's "<dirs> <files>" pair from any format (text or -J/-X).
+nums() { grep -oE '[0-9]+ director[a-z]*, [0-9]+ file|directories":?="?[0-9]+|files":?="?[0-9]+|"directories":[0-9]+,"files":[0-9]+' | grep -oE '[0-9]+' | tr '\n' ' '; }
+d7fail=0
+k=0; while [ "$k" -lt 6 ]; do
+	k=$((k + 1))
+	r7="$dv/d7"; rm -rf "$r7"; mkdir -p "$r7/p" "$r7/realdir/sub"; : > "$r7/realdir/sub/f"
+	ln -s ../realdir "$r7/p/link"
+	truth=$("$ASP" -l "$r7" 2>/dev/null | nums)            # aspen streaming, sorted = the deterministic truth
+	ref_s=$("$ref" -l "$r7" 2>/dev/null | nums)            # tree streaming (also sorted/deterministic)
+	ac=$("$ASP" --condense -l "$r7" 2>/dev/null | nums)    # aspen full-tree text
+	aj=$("$ASP" -J --condense -l "$r7" 2>/dev/null | nums) # aspen full-tree JSON
+	if [ "$truth" != "$ref_s" ]; then
+		echo "DEVIATIONS D7: aspen streaming -l[$truth] != tree streaming -l[$ref_s]"; d7fail=1
+	fi
+	if [ "$ac" != "$truth" ] || [ "$aj" != "$truth" ]; then
+		echo "DEVIATIONS D7: aspen full-tree -l not self-consistent — stream[$truth] condense[$ac] -J[$aj]"; d7fail=1
+	fi
+	[ "$d7fail" = 1 ] && break
+done
+[ "$d7fail" = 1 ] && fail=1
+
 chmod -R u+rwx "$dv" 2>/dev/null || :
 rm -rf "$dv"
 
