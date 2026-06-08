@@ -20,7 +20,20 @@ static void esc_octal(struct dstr *o, unsigned long v)
 static void byte_branch(struct dstr *o, const char *s, size_t len, int mb_cur_max, int flags)
 {
 	int quote = flags & NP_QUOTE, qmark = flags & NP_QMARK;
-	for (size_t i = 0; i < len; i++) {
+	/* SR02-1.3: bulk-copy the leading run of "clean" bytes (printable and not
+	 * escaped: not '\\', not a quote under -Q, not a space when unquoted; control
+	 * bytes 7..13 are already !isprint) in one dstr_append, then fall into the
+	 * byte-by-byte loop only from the first byte that needs special handling. The
+	 * vast majority of names are entirely clean -> one scan + one memcpy. */
+	size_t a = 0;
+	while (a < len) {
+		unsigned char c = (unsigned char)s[a];
+		if (!isprint(c) || c == '\\' || (c == '"' && quote) || (c == ' ' && !quote))
+			break;
+		a++;
+	}
+	dstr_append(o, s, a);
+	for (size_t i = a; i < len; i++) {
 		unsigned char c = (unsigned char)s[i];
 		if ((c >= 7 && c <= 13) || c == '\\' || (c == '"' && quote) ||
 		    (c == ' ' && !quote)) {
