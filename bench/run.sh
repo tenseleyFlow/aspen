@@ -111,7 +111,10 @@ if [ -f tests/golden/PARITY_ACTIVE ] && [ -x "$ASP" ]; then
 			*)	scsv="$work/cls-$cls-s.csv"
 				if hyperfine -N -w 5 -r 30 --export-csv "$scsv" \
 					"$ASP -s $work/$cls" "$REF -n -s $work/$cls" >/dev/null 2>&1; then
-					sh bench/gate.sh "$scsv" min "class:$cls:-s" || rc=1
+					# gate_csv applies the shared rule: hard-gate (mean) for a real
+					# >=5ms class, report-only (min) for a sub-5ms one so CI's tiny
+					# classes don't flap on noise — same as the default per-shape gate.
+					gate_csv "$scsv" "class:$cls:-s"
 				fi ;;
 			esac
 		done
