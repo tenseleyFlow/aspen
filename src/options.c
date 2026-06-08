@@ -190,8 +190,18 @@ static const char *long_val(char *a, const char *pfx, int *i, int argc, char **a
 	size_t len = strlen(pfx);
 	if (strncmp(a, pfx, len) != 0)
 		return NULL;
-	if (a[len] == '=')
+	if (a[len] == '=') {
+		/* tree errors on an empty "--opt=" value (tree.c:112): "Missing argument
+		 * to <opt>=", exit 1, no output. The trailing '=' and the absence of the
+		 * short flag's " option." suffix are both reproduced; the bare "--charset"
+		 * list side effect is NOT triggered here (only the no-'=' form does it). */
+		if (a[len + 1] == '\0') {
+			char buf[80];
+			snprintf(buf, sizeof buf, "Missing argument to %s=", pfx);
+			die_msg(buf);
+		}
 		return a + len + 1;
+	}
 	if (a[len] == '\0') {
 		char buf[80];
 		snprintf(buf, sizeof buf, "%s", pfx);

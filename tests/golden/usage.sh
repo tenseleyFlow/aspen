@@ -48,6 +48,13 @@ chk "bad-short"     1 -Z
 chk "bad-short-mid" 1 -aZd
 chk "missing-arg"   1 -L
 
+# SR02-0.4 (M2): an empty long-option value "--opt=" is a missing argument in tree
+# (stderr "Missing argument to --opt=", exit 1, empty stdout) — not a valid empty value.
+chk "charset-empty"   1 --charset=
+chk "compress-empty"  1 --compress=
+chk "filelimit-empty" 1 --filelimit=
+chk "timefmt-empty"   1 --timefmt=
+
 # --version: aspen's own line, exit 0. Format-assert (not vs tree).
 "$ASP" --version >"$work/u.ver" 2>&1; vrc=$?
 if [ "$vrc" != 0 ]; then echo "USAGE: --version rc=$vrc (expected 0)"; fail=1; fi
