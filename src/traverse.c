@@ -529,6 +529,49 @@ static void prefetch_one(void *arg, size_t i)
 	asp_dirclose(cd);
 }
 
+/* Resolve whether to descend into `e` and, if not, why (SR02-2.1). Shared by the
+ * streaming (walk_dir) and full-tree (build_level) engines so the parity-critical
+ * -L/-x/-l descent logic — home of the SR02-0.2 ordering bug — lives in ONE place.
+ * Sets *post_err to "recursive, not followed" for a followed symlink whose target
+ * was already seen, and *at_boundary when an otherwise-eligible directory is
+ * stopped purely by the -L limit (the -R rerun trigger; emit_level detects the
+ * same boundary via a NULL child, so the full-tree caller ignores at_boundary). */
+static int decide_descent(struct wctx *c, struct entry *e, int depth,
+			  const char **post_err, int *at_boundary)
+{
+	const struct options *o = c->o;
+	*post_err = NULL;
+	*at_boundary = 0;
+	int descend = (e->type == ASP_DIR) ||
+		      (o->follow && e->type == ASP_LNK && e->ltype == ASP_DIR);
+	/* xdev-excluded dirs neither descend nor (under -R) rerun. */
+	if (descend && o->xdev && e->type == ASP_DIR && e->dev != c->root_dev)
+		descend = 0;
+	/* The -L limit: an otherwise-eligible, non-excluded dir stopped here is the
+	 * -R boundary (tree list.c:209). */
+	if (descend && o->level >= 0 && depth >= o->level) {
+		*at_boundary = 1;
+		descend = 0;
+	}
+	/* -l cycle detection: only a SYMLINK whose target inode was already seen is
+	 * "recursive, not followed"; a real directory revisited via a symlink (or
+	 * hardlink) is still descended. Seed the set with every descended dir so a
+	 * later symlink pointing at it is caught. */
+	if (descend && o->follow) {
+		if (e->type == ASP_LNK) {
+			if (inoset_has(&c->seen, e->ino, e->dev)) {
+				*post_err = "recursive, not followed";
+				descend = 0;
+			} else {
+				inoset_add(&c->seen, e->ino, e->dev);
+			}
+		} else {
+			inoset_add(&c->seen, e->ino, e->dev);
+		}
+	}
+	return descend;
+}
+
 static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 {
 	struct arena_marker mk = arena_mark(&c->arena);
@@ -581,39 +624,15 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 		/* Descent decision is computed BEFORE the entry is emitted (tree calls
 		 * printfile with the resolved descend+htmldescend), so the renderer knows
 		 * whether this is a normal dir, a -R boundary, or a plain entry. */
-		int descend = 0;
-		const char *post_err = NULL;
-		if (e->type == ASP_DIR)
-			descend = 1;
-		else if (o->follow && e->type == ASP_LNK && e->ltype == ASP_DIR)
-			descend = 1;
+		const char *post_err;
+		int at_boundary;
+		int descend = decide_descent(c, e, depth, &post_err, &at_boundary);
 
-		if (descend && o->xdev && e->type == ASP_DIR && e->dev != c->root_dev)
-			descend = 0;
-
-		/* -R: an otherwise-eligible dir stopped by the -L limit is re-rendered into
+		/* -R: an eligible dir stopped by the -L limit is re-rendered into
 		 * <path>/00Tree.html and flips htmldescend sticky (tree list.c:209). */
-		if (descend && o->rerun && o->level >= 0 && depth >= o->level && c->r->rerun) {
+		if (at_boundary && o->rerun && c->r->rerun) {
 			c->r->rerun(c->rctx, c->path.data, o);
 			htmldescend = 10;
-		}
-		if (descend && o->level >= 0 && depth >= o->level)
-			descend = 0;
-		if (descend && o->follow) {
-			/* tree marks only a SYMLINK "recursive, not followed" when its target's
-			 * inode was already seen; a real directory revisited via a symlink (or
-			 * hardlink) is still descended. Seed the set with every descended dir so
-			 * a later symlink pointing at it is caught. */
-			if (e->type == ASP_LNK) {
-				if (inoset_has(&c->seen, e->ino, e->dev)) {
-					post_err = "recursive, not followed";
-					descend = 0;
-				} else {
-					inoset_add(&c->seen, e->ino, e->dev);
-				}
-			} else {
-				inoset_add(&c->seen, e->ino, e->dev);
-			}
 		}
 
 		c->r->line->entry(c->rctx, e, c->path.data, depth, is_last,
@@ -722,29 +741,10 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 			child_suppress = 1;
 		}
 
-		int descend = (e->type == ASP_DIR) ||
-			(o->follow && e->type == ASP_LNK && e->ltype == ASP_DIR);
-		const char *post_err = NULL;
-		if (descend && o->level >= 0 && depth >= o->level)
-			descend = 0;
-		if (descend && o->xdev && e->type == ASP_DIR && e->dev != c->root_dev)
-			descend = 0;
-		if (descend && o->follow) {
-			/* tree marks only a SYMLINK "recursive, not followed" when its target's
-			 * inode was already seen; a real directory revisited via a symlink (or
-			 * hardlink) is still descended. Seed the set with every descended dir so
-			 * a later symlink pointing at it is caught. */
-			if (e->type == ASP_LNK) {
-				if (inoset_has(&c->seen, e->ino, e->dev)) {
-					post_err = "recursive, not followed";
-					descend = 0;
-				} else {
-					inoset_add(&c->seen, e->ino, e->dev);
-				}
-			} else {
-				inoset_add(&c->seen, e->ino, e->dev);
-			}
-		}
+		const char *post_err;
+		int at_boundary; /* full-tree: emit_level finds the -R boundary via a NULL child */
+		int descend = decide_descent(c, e, depth, &post_err, &at_boundary);
+		(void)at_boundary;
 
 		if (descend) {
 			struct asp_dir *cd;
