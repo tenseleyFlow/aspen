@@ -120,3 +120,7 @@ rejects them as unknown flags.
   with `drop_caches` it showed no benefit on SSD/NVMe (a cold walk there is bandwidth-bound, not
   latency-bound) and it makes warm runs slightly slower, so it is off by default. Output is identical
   either way; streaming path only.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
