@@ -22,12 +22,14 @@ void xml_ctx_init(struct xml_ctx *x, int fd, const struct options *o)
 	x->fd = fd;
 	x->o = o;
 	dstr_init(&x->fp);
+	x->sortscr = (struct asp_sort_scratch){ 0 };
 }
 
 void xml_ctx_destroy(struct xml_ctx *x)
 {
 	dstr_free(&x->out);
 	dstr_free(&x->fp);
+	asp_sort_scratch_free(&x->sortscr);
 }
 
 static const char *xnl(struct xml_ctx *x)
@@ -116,7 +118,7 @@ static void xemit_level(struct xml_ctx *x, struct entry **arr, int depth, struct
 	size_t n = 0;
 	while (arr[n])
 		n++;
-	asp_sort(arr, n, x->o);
+	asp_sort(arr, n, x->o, &x->sortscr);
 
 	for (size_t i = 0; arr[i]; i++) {
 		struct entry *e = arr[i];

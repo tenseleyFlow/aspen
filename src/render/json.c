@@ -20,12 +20,14 @@ void json_ctx_init(struct json_ctx *j, int fd, const struct options *o)
 	j->fd = fd;
 	j->o = o;
 	dstr_init(&j->fp);
+	j->sortscr = (struct asp_sort_scratch){ 0 };
 }
 
 void json_ctx_destroy(struct json_ctx *j)
 {
 	dstr_free(&j->out);
 	dstr_free(&j->fp);
+	asp_sort_scratch_free(&j->sortscr);
 }
 
 static const char *jnl(struct json_ctx *j)
@@ -151,7 +153,7 @@ static void jemit_level(struct json_ctx *j, struct entry **arr, int depth, struc
 	size_t n = 0;
 	while (arr[n])
 		n++;
-	asp_sort(arr, n, j->o);
+	asp_sort(arr, n, j->o, &j->sortscr);
 	for (size_t i = 0; arr[i]; i++) {
 		struct entry *e = arr[i];
 		int last = (arr[i + 1] == NULL);

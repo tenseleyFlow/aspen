@@ -196,39 +196,61 @@ static void radix_msd(struct entry **a, struct entry **aux, size_t n, size_t dep
 	}
 }
 
-void asp_sort(struct entry **v, size_t n, const struct options *o)
+/* Grow *p to at least `need` bytes (high-water; never shrinks). */
+static void *sort_scratch_grow(void **p, size_t *cap, size_t need)
+{
+	if (*cap < need) {
+		*p = asp_xrealloc(*p, need);
+		*cap = need;
+	}
+	return *p;
+}
+
+void asp_sort_scratch_free(struct asp_sort_scratch *sc)
+{
+	if (!sc)
+		return;
+	free(sc->aux);
+	free(sc->keys);
+	free(sc->buf);
+	*sc = (struct asp_sort_scratch){ 0 };
+}
+
+void asp_sort(struct entry **v, size_t n, const struct options *o,
+	      struct asp_sort_scratch *sc)
 {
 	if (o->sort == SORT_NONE) /* -U: unsorted, and disables the meta-sort */
 		return;
+	struct asp_sort_scratch local = { 0 }; /* one-off buffer when sc == NULL */
+	if (!sc)
+		sc = &local;
 	struct sortctx c = { o, c_collate(), NULL };
 
 	/* Fastest path: plain-name sort in a byte-order locale -> MSD byte radix
 	 * (SR-3.1). Same order as memcmp/strcoll by construction; -r reverses the
 	 * ascending result (names are unique, so this is exact). The meta-sort
-	 * (dirs/files-first) keeps the comparator path. */
+	 * (dirs/files-first) keeps the comparator path. The radix aux, the strxfrm
+	 * key records, and the strxfrm byte buffer all come from the reusable scratch
+	 * (grown high-water), so the per-level malloc/free pair is gone. */
 	if (o->sort == SORT_NAME && c.cc && !o->dirsfirst && !o->filesfirst && n > 1) {
-		struct entry **aux = asp_xmalloc(n * sizeof *aux);
+		struct entry **aux = sort_scratch_grow(&sc->aux, &sc->aux_cap, n * sizeof *aux);
 		radix_msd(v, aux, n, 0);
-		free(aux);
 		if (o->reverse)
 			for (size_t i = 0, j = n - 1; i < j; i++, j--) {
 				struct entry *t = v[i];
 				v[i] = v[j];
 				v[j] = t;
 			}
-		return;
-	}
-
-	/* Fast path for the common case (plain name sort in a collating locale):
-	 * transform each name once with strxfrm, then sort keys with memcmp —
-	 * O(n) strxfrm instead of O(n log n) strcoll. Same order by definition.
-	 * Skipped for C/POSIX (strcoll is already byte compare) and when a
-	 * meta-sort needs the dir/file split. */
-	if (o->sort == SORT_NAME && !o->dirsfirst && !o->filesfirst && n > 1 &&
-	    !c.cc) {
-		struct keyed *k = asp_xmalloc(n * sizeof *k);
-		char *buf = NULL;
-		size_t cap = 0, off = 0;
+	} else if (o->sort == SORT_NAME && !o->dirsfirst && !o->filesfirst && n > 1 &&
+		   !c.cc) {
+		/* Fast path for the common case (plain name sort in a collating locale):
+		 * transform each name once with strxfrm, then sort keys with memcmp —
+		 * O(n) strxfrm instead of O(n log n) strcoll. Same order by definition.
+		 * Skipped for C/POSIX (strcoll is already byte compare) and when a
+		 * meta-sort needs the dir/file split. */
+		struct keyed *k = sort_scratch_grow(&sc->keys, &sc->keys_cap, n * sizeof *k);
+		char *buf = sc->buf;
+		size_t cap = sc->buf_cap, off = 0;
 		for (size_t i = 0; i < n; i++) {
 			const char *name = v[i]->name;
 			/* Generous guess keeps strxfrm to one call per name; the
@@ -251,14 +273,16 @@ void asp_sort(struct entry **v, size_t n, const struct options *o)
 			k[i].koff = off;
 			off += got + 1;
 		}
+		sc->buf = buf; /* keep the (possibly grown) key buffer for reuse */
+		sc->buf_cap = cap;
 		c.keys = buf;
 		asp_qsort_r(k, n, sizeof *k, keycmp, &c);
 		for (size_t i = 0; i < n; i++)
 			v[i] = k[i].e;
-		free(buf);
-		free(k);
-		return;
+	} else {
+		asp_qsort_r(v, n, sizeof *v, cmp, &c);
 	}
 
-	asp_qsort_r(v, n, sizeof *v, cmp, &c);
+	if (sc == &local) /* one-off caller: nothing persistent to keep */
+		asp_sort_scratch_free(sc);
 }

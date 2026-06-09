@@ -7,12 +7,14 @@
 #include "dstr.h"
 #include "options.h"
 #include "render.h"
+#include "sort.h"
 
 struct json_ctx {
 	struct dstr out;
 	int fd;
 	const struct options *o;
 	struct dstr fp; /* -f only: path stack (root + "/name" per level) for full names */
+	struct asp_sort_scratch sortscr; /* reused by the per-level asp_sort on emit */
 };
 
 void json_ctx_init(struct json_ctx *j, int fd, const struct options *o);

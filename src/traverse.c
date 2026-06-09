@@ -60,6 +60,7 @@ struct wctx {
 	struct evec *epool;
 	size_t epoolcap;
 	struct evec defer;
+	struct asp_sort_scratch sortscr; /* reused by every per-level asp_sort */
 };
 
 /* Threshold below which a level's deferred stats run inline — small levels
@@ -143,6 +144,7 @@ static void wctx_scratch_init(struct wctx *c)
 	c->epool = NULL;
 	c->epoolcap = 0;
 	c->defer = (struct evec){ NULL, 0, 0 };
+	c->sortscr = (struct asp_sort_scratch){ 0 };
 	c->root_err = NULL;
 }
 
@@ -152,6 +154,7 @@ static void wctx_scratch_free(struct wctx *c)
 		free(c->epool[i].v);
 	free(c->epool);
 	free(c->defer.v);
+	asp_sort_scratch_free(&c->sortscr);
 }
 
 static int is_exec(mode_t m)
@@ -697,7 +700,7 @@ static void walk_dir(struct wctx *c, struct asp_dir *d, int depth)
 
 	read_level(c, d, ev, 0);
 
-	asp_sort(ev->v, ev->n, o);
+	asp_sort(ev->v, ev->n, o, &c->sortscr);
 
 	/* Cache the buffer + count: recursing deeper may evec_at()->realloc the pool
 	 * array (moving the struct evec), but never this level's separately-malloc'd
@@ -810,7 +813,7 @@ static struct entry **build_level(struct wctx *c, struct asp_dir *d, int depth,
 	 * order (inode-dependent → nondeterministic 7/4-vs-5/2 under -J/-X/-l). The
 	 * streaming walk_dir already sorts here; build_level must too. emit_level's
 	 * later re-sort is then idempotent (unique names → a stable total order). */
-	asp_sort(ev->v, ev->n, o);
+	asp_sort(ev->v, ev->n, o, &c->sortscr);
 
 	/* --filelimit: a directory with more than N listable entries is not opened;
 	 * it shows the marker and its contents are skipped. Handled uniformly for a
@@ -985,7 +988,7 @@ static void emit_level(struct wctx *c, struct entry **arr, int depth)
 	size_t n = 0;
 	while (arr[n])
 		n++;
-	asp_sort(arr, n, o);
+	asp_sort(arr, n, o, &c->sortscr);
 
 	/* -R sticky htmldescend, mirroring walk_dir / tree list.c:148. */
 	int htmldescend = 0;
