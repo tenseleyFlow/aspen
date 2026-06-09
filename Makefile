@@ -118,7 +118,7 @@ install: all
 	@mkdir -p $(BINDIR) $(MANDIR)
 	install -m 0755 aspen $(BINDIR)/aspen
 	ln -sf aspen $(BINDIR)/asp
-	@[ -f doc/aspen.1 ] && install -m 0644 doc/aspen.1 $(MANDIR)/aspen.1 || true
+	install -m 0644 doc/aspen.1 $(MANDIR)/aspen.1
 
 uninstall:
 	rm -f $(BINDIR)/aspen $(BINDIR)/asp $(MANDIR)/aspen.1

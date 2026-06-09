@@ -1,0 +1,427 @@
+.\" Man page for aspen — a fast, byte-compatible reimplementation of tree(1).
+.\" This page is original to the aspen project (it is NOT derived from the
+.\" GPL tree(1) manual). Written for aspen 0.1.0.
+.TH ASPEN 1 "2026-06-08" "aspen 0.1.0" "User Commands"
+.SH NAME
+aspen, asp \- list the contents of directories in a tree-like format
+.SH SYNOPSIS
+.B aspen
+[\fIoptions\fR]
+[\fIdirectory\fR ...]
+.SH DESCRIPTION
+.B aspen
+recursively lists the contents of each given
+.I directory
+(the current directory if none is given) as an indented tree, then prints a
+summary count of the directories and files shown.
+.PP
+It is a from-scratch C reimplementation of
+.BR tree (1)
+that is designed to be a drop-in replacement: for every supported invocation its
+standard output, standard error, and exit status are
+.B byte-for-byte identical
+to GNU tree 2.3.2, while running measurably faster. The only intentional
+differences are the program name itself (\fBaspen\fR appears in usage, version,
+and error text) and a small set of cases where tree's output is deterministic but
+self-inconsistent or wrong, which aspen renders correctly instead; these are
+enumerated under
+.BR COMPATIBILITY .
+.PP
+The speed comes from avoiding work tree always does \(em most importantly,
+.B aspen
+does not
+.BR stat (2)
+an entry when the directory read already reports its type, so a plain listing
+issues far fewer system calls.
+.SH OPTIONS
+.SS Listing options
+.TP
+.B \-a
+List all files, including those whose names begin with a dot.
+.TP
+.B \-d
+List directories only.
+.TP
+.B \-l
+Follow symbolic links that point to directories, as if they were directories.
+A link that would create a cycle is reported but not followed.
+.TP
+.B \-f
+Print the full path prefix for each file.
+.TP
+.B \-x
+Stay on the current filesystem only, as with
+.BR "find \-xdev" .
+.TP
+.BI \-L " level"
+Descend at most
+.I level
+directories deep.
+.TP
+.B \-R
+At the maximum
+.B \-L
+depth, rerun
+.B aspen
+in each leaf directory and write the result to a
+.B 00Tree.html
+file there. Only meaningful with the HTML/text output.
+.TP
+.BI \-P " pattern"
+List only files matching the wildcard
+.IR pattern .
+The pattern is matched against the basename, the full path, and each
+\fB/\fR-delimited suffix of the path;
+.B *
+does not cross
+.BR / ,
+but
+.B **
+does.
+.TP
+.BI \-I " pattern"
+Do not list files matching the wildcard
+.IR pattern .
+.TP
+.B \-\-gitignore
+Filter entries using the
+.B .gitignore
+files found along the walk (and
+.BR $GIT_DIR/info/exclude ).
+.TP
+.BI \-\-gitfile " file"
+Read an additional gitignore-format
+.IR file .
+.TP
+.B \-\-ignore\-case
+Match
+.B \-P
+and
+.B \-I
+patterns case-insensitively.
+.TP
+.B \-\-matchdirs
+Apply
+.B \-P
+patterns to directory names as well, showing a matched directory's whole subtree.
+.TP
+.B \-\-metafirst
+Print the metadata columns at the start of each line rather than before the name.
+.TP
+.B \-\-prune
+Omit empty directories from the output (implied by some filters).
+.TP
+.B \-\-info
+Print descriptive text from
+.B .info
+files found alongside the listed entries.
+.TP
+.BI \-\-infofile " file"
+Read an additional
+.B .info
+.IR file .
+.TP
+.B \-\-noreport
+Suppress the directory/file count printed after the tree.
+.TP
+.BI \-\-charset " X"
+Use character set
+.I X
+for the indentation glyphs and for HTML output.
+.TP
+.BI \-\-filelimit " #"
+Do not descend into directories containing more than
+.I #
+entries.
+.TP
+.B \-\-condense
+Collapse chains of single-child directories onto one line.
+.TP
+.BI \-o " filename"
+Write output to
+.I filename
+instead of standard output.
+.SS File options
+.TP
+.B \-q
+Print non-printable characters in names as
+.BR ? .
+.TP
+.B \-N
+Print non-printable characters in names verbatim.
+.TP
+.B \-Q
+Quote each name with double quotes.
+.TP
+.B \-p
+Print the file type and permission bits for each entry.
+.TP
+.B \-u
+Print the owning user name (or UID).
+.TP
+.B \-g
+Print the owning group name (or GID).
+.TP
+.B \-s
+Print the size of each file in bytes.
+.TP
+.B \-h
+Print sizes in a human-readable form (powers of 1024).
+.TP
+.B \-\-si
+Like
+.BR \-h ,
+but in SI units (powers of 1000).
+.TP
+.B \-\-du
+Report each directory's size as the cumulative size of its contents.
+.TP
+.B \-D
+Print the last-modification time, or with
+.B \-c
+the last status-change time.
+.TP
+.BI \-\-timefmt " format"
+Print times formatted by
+.IR format ,
+as in
+.BR strftime (3).
+.TP
+.B \-F
+Append a type indicator (one of
+.BR "/ = * @ | >" )
+to each name, as in
+.BR "ls \-F" .
+.TP
+.B \-\-inodes
+Print the inode number of each file.
+.TP
+.B \-\-device
+Print the device number each file resides on.
+.SS Sorting options
+.TP
+.B \-v
+Sort names by embedded version numbers (natural order).
+.TP
+.B \-t
+Sort by last-modification time.
+.TP
+.B \-c
+Sort by last status-change time.
+.TP
+.B \-U
+Do not sort; list entries in directory order.
+.TP
+.B \-r
+Reverse the sort order.
+.TP
+.B \-\-dirsfirst
+List directories before files (disabled by
+.BR \-U ).
+.TP
+.B \-\-filesfirst
+List files before directories (disabled by
+.BR \-U ).
+.TP
+.BI \-\-sort " X"
+Select the sort key:
+.BR name ", " version ", " size ", " mtime ", " ctime ", or " none .
+.SS Graphics options
+.TP
+.B \-i
+Omit the indentation lines.
+.TP
+.B \-A
+Use ANSI line-drawing characters for indentation.
+.TP
+.B \-S
+Use CP437 (DOS console) line-drawing characters.
+.TP
+.B \-n
+Never colorize the output (overridden by
+.BR \-C ).
+.TP
+.B \-C
+Always colorize the output, honouring
+.B LS_COLORS
+/
+.BR TREE_COLORS .
+.TP
+.BI \-\-compress " #"
+Compress the indentation by
+.I #
+columns.
+.SS XML / HTML / JSON / hyperlink options
+.TP
+.B \-X
+Emit an XML representation of the tree.
+.TP
+.B \-J
+Emit a JSON representation of the tree.
+.TP
+.BI \-H " baseHREF"
+Emit HTML, using
+.I baseHREF
+as the base directory for links.
+.TP
+.BI \-T " string"
+Replace the default HTML title and H1 heading with
+.IR string .
+.TP
+.B \-\-nolinks
+Do not emit hyperlinks in HTML output.
+.TP
+.BI \-\-hintro " file"
+Use
+.I file
+as the HTML preamble.
+.TP
+.BI \-\-houtro " file"
+Use
+.I file
+as the HTML epilogue.
+.TP
+.B \-\-hyperlink
+Emit OSC 8 terminal hyperlinks around each name.
+.TP
+.BI \-\-scheme " X"
+Set the OSC 8 hyperlink URI scheme (default
+.BR file:// ).
+.TP
+.BI \-\-authority " X"
+Set the OSC 8 hyperlink authority (host).
+.SS Input options
+.TP
+.B \-\-fromfile
+Read the tree structure from a list of paths rather than the filesystem
+.RB ( .
+reads standard input).
+.TP
+.B \-\-fromtabfile
+Read the tree from a tab-indented file
+.RB ( .
+reads standard input).
+.TP
+.B \-\-fflinks
+Honour link information when reading with
+.BR \-\-fromfile .
+.SS Miscellaneous options
+.TP
+.B \-\-opt\-toggle
+Enable option toggling.
+.TP
+.B \-\-version
+Print version information and exit.
+.TP
+.B \-\-help
+Print a usage summary and exit.
+.TP
+.B \-\-
+Stop option processing; treat the rest of the command line as directory
+arguments.
+.SH "ASPEN EXTENSIONS"
+These options and environment variables are specific to
+.B aspen
+and have no counterpart in tree. They never change the output bytes; they only
+affect how the work is scheduled, so a run with any of them remains byte-identical
+to the default.
+.TP
+.BI \-\-threads " N"
+Bound the metadata-stat worker pool to
+.I N
+threads
+.RB ( 0 ,
+the default, auto-detects). The pool is used only when a flag forces a
+.BR stat (2)
+of every entry and a directory is large enough to amortize it; output ordering is
+deterministic regardless of
+.IR N .
+This option is intentionally omitted from
+.B \-\-help
+so that the usage text stays byte-identical to tree.
+.SH "EXIT STATUS"
+.TP
+.B 0
+Success.
+.TP
+.B 1
+A usage or option error.
+.TP
+.B 2
+One or more directories could not be opened, or a
+.B \-\-filelimit
+was exceeded. Unlike tree, aspen reports this consistently in every output mode.
+.SH ENVIRONMENT
+.TP
+.B LC_ALL ", " LC_COLLATE ", " LANG
+Select the locale used for the default name sort. In the
+.B C
+locale aspen sorts bytewise; otherwise it collates per the locale.
+.TP
+.B LS_COLORS ", " TREE_COLORS ", " CLICOLOR ", " CLICOLOR_FORCE ", " NO_COLOR
+Control colorization under
+.BR \-C "/" \-n .
+.TP
+.B GIT_DIR
+With
+.BR \-\-gitignore ,
+the location of
+.B info/exclude
+to consult.
+.TP
+.B ASP_IO
+Select the metadata-stat backend:
+.B threads
+(the default thread pool),
+.B serial
+(force the inline path), or
+.B uring
+(Linux io_uring, when available). All produce identical output.
+.TP
+.B ASP_PREFETCH
+If set, enable an experimental cross-directory read-prefetch pool. Off by default;
+it can help on high-latency storage but is slightly slower on a warm cache.
+.SH COMPATIBILITY
+.B aspen
+targets byte-for-byte parity with GNU tree 2.3.2 on standard output, standard
+error, and exit status. The deliberate exceptions are:
+.IP \(bu 2
+the program name
+.RB ( aspen )
+in usage, version, and diagnostic text;
+.IP \(bu 2
+a small set of cases where tree's output is deterministic yet wrong or
+self-inconsistent \(em for example, a non-zero exit status is reported in every
+mode when a directory cannot be opened, JSON stays well-formed after an error, and
+percent-encoded hyperlinks use the real byte rather than a sign-extended one.
+.PP
+Behaviour that tree drives by undefined or order-dependent means (such as dropping
+an entry whose
+.BR lstat (2)
+races a concurrent unlink) is not reproduced; aspen produces a deterministic
+result instead.
+.SH EXAMPLES
+.TP
+.B aspen
+List the current directory as a tree.
+.TP
+.B aspen \-ah /etc
+List
+.I /etc
+including dot files, with human-readable sizes.
+.TP
+.B aspen \-P '*.c' \-\-prune src
+Show only C source files, pruning directories that contain none.
+.TP
+.B aspen \-J \-o tree.json .
+Write a JSON representation of the current directory to
+.IR tree.json .
+.SH SEE ALSO
+.BR tree (1),
+.BR ls (1),
+.BR find (1)
+.SH AUTHORS
+.B aspen
+is an independent reimplementation of the tree utility. It is not affiliated with
+or derived from the source of GNU tree; it aims only for compatibility with tree's
+observable behaviour.
