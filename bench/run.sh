@@ -41,11 +41,17 @@ locales="C"; [ -n "$utf8" ] && locales="C $utf8"
 gate_csv() { # <csv> <label>
 	_csv=$1; _lbl=$2
 	_tmean=$(awk -F, 'NR>1 { split($1,w," "); if (w[1] ~ /tree/) {print $2; exit} }' "$_csv")
-	if awk -v t="$_tmean" 'BEGIN { exit !(t + 0 < 0.005) }'; then
+	# A workload tree runs in under ~10ms is noise-dominated on a shared CI runner
+	# (the startup floor: -L1/-L2/--version land here). Report it with the
+	# noise-robust min metric instead of hard-gating mean — otherwise a tie like
+	# macOS -L1/en_US (5.66ms, 0.99x = 1% noise) flaps the build red. Real workloads
+	# (the default/-s matrix and the flat/wide/deep classes) are 15ms+ and still
+	# hard-gate. ASP_PERF_STRICT=1 turns the floor into a strict min gate.
+	if awk -v t="$_tmean" 'BEGIN { exit !(t + 0 < 0.010) }'; then
 		if [ "${ASP_PERF_STRICT:-0}" = 1 ]; then
-			sh bench/gate.sh "$_csv" min "$_lbl sub-5ms" || rc=1
+			sh bench/gate.sh "$_csv" min "$_lbl floor" || rc=1
 		else
-			sh bench/gate.sh "$_csv" min "$_lbl sub-5ms,report" || true
+			sh bench/gate.sh "$_csv" min "$_lbl floor,report" || true
 		fi
 	else
 		sh bench/gate.sh "$_csv" mean "$_lbl" || rc=1
@@ -112,8 +118,8 @@ if [ -f tests/golden/PARITY_ACTIVE ] && [ -x "$ASP" ]; then
 				if hyperfine -N -w 5 -r 30 --export-csv "$scsv" \
 					"$ASP -s $work/$cls" "$REF -n -s $work/$cls" >/dev/null 2>&1; then
 					# gate_csv applies the shared rule: hard-gate (mean) for a real
-					# >=5ms class, report-only (min) for a sub-5ms one so CI's tiny
-					# classes don't flap on noise — same as the default per-shape gate.
+					# >=10ms class, report-only (min) for a sub-10ms floor one so CI's
+					# tiny classes don't flap on noise — same as the default per-shape gate.
 					gate_csv "$scsv" "class:$cls:-s"
 				fi ;;
 			esac
