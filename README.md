@@ -82,19 +82,19 @@ marginally fewer syscalls, but process startup dominates and there's almost noth
 
 | Workload | default | `-s` |
 |---|---:|---:|
-| flat | **3.4×** | 2.0× |
-| mixed | 1.5× | 1.1× |
-| wide | 1.3× | 1.2× |
-| deep | 1.2× | 0.9×³ |
+| flat | **3.3×** | 2.1× |
+| mixed | 1.7× | 1.2× |
+| wide | 2.0× | 1.2× |
+| deep | 1.4× | 1.5× |
 
-Cold, both tools are I/O-bound, so the gap narrows; aspen still wins on the flat/output-heavy cases
-by avoiding the per-file `lstat`.
+Cold, both tools are I/O-bound, so the gap narrows — but aspen still wins **every** shape, by issuing
+fewer syscalls (no per-file `lstat`) and, where a directory is wide enough, overlapping the cold `stat`
+latency across the worker pool. The narrowest cases are `-s` on stat-bound shapes (`wide`/`mixed`,
+~1.2×), where both tools must `stat` every entry.
 
 ¹ A FreeBSD box running these Linux binaries through a compat layer shows 8–10× — the layer taxes
 `tree`'s heavy syscalls extra, so it's an outlier and not used for the headline. ² Real-world numbers
-are small-tree (startup-floor) lower bounds. ³ `deep -s` is the one case where aspen is marginally
-*slower* cold (the stat-pool hand-off costs more than it saves on a single-wide chain) — reported for
-honesty.
+are small-tree (startup-floor) lower bounds.
 
 ## Layout
 
