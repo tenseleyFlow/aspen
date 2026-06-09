@@ -2,10 +2,21 @@ name: ci
 
 on:
   push:
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+      - '.docs/**'
+      - 'LICENSE'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+      - '.docs/**'
+      - 'LICENSE'
 
 jobs:
-  # Native runners: Linux (glibc, x86_64) and macOS (arm64).
+  # Native runners: Linux (glibc, x86_64) and macOS (arm64). Public repo, so both
+  # are free; docs-only pushes are skipped via paths-ignore above.
   native:
     strategy:
       fail-fast: false
