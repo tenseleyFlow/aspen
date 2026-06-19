@@ -159,6 +159,12 @@ static struct diff_entry **merge_level(struct entry **a_arr, struct entry **b_ar
 					d->status = DIFF_MODIFIED;
 			} else if (a_dir != b_dir) {
 				d->status = DIFF_MODIFIED;
+				if (b_dir && b_arr[ib]->child)
+					d->child = annotate_subtree(b_arr[ib]->child,
+								    DIFF_ADDED, out);
+				else if (a_dir && a_arr[ia]->child)
+					d->child = annotate_subtree(a_arr[ia]->child,
+								    DIFF_REMOVED, out);
 			} else {
 				if (entries_differ(a_arr[ia], b_arr[ib]))
 					d->status = DIFF_MODIFIED;
