@@ -37,6 +37,7 @@ SRC = \
 	src/arena.c \
 	src/charset.c \
 	src/color.c \
+	src/diff.c \
 	src/dstr.c \
 	src/entry.c \
 	src/filter.c \

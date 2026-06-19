@@ -1198,6 +1198,47 @@ static void asp_walk_fromfile(const char *arg, const struct options *o,
 	asp_fnode_free(ftop);
 }
 
+int asp_build_tree(const char *root, const struct options *o,
+		   struct statprov *sp, struct asp_built_tree *out)
+{
+	struct asp_dir *d;
+	if (asp_diropen(root, &d) != 0)
+		return -1;
+
+	struct wctx c;
+	arena_init(&c.arena, 0);
+	dstr_init(&c.path);
+	dstr_appendz(&c.path, root);
+	while (c.path.len > 1 && c.path.data[c.path.len - 1] == '/') {
+		c.path.len--;
+		c.path.data[c.path.len] = '\0';
+	}
+	c.o = o;
+	c.r = NULL;
+	c.rctx = NULL;
+	struct totals t = { 0, 0, 0 };
+	int errs = 0;
+	c.tot = &t;
+	c.errors = &errs;
+	c.root_dev = 0;
+	c.fstack = NULL;
+	c.istack = NULL;
+	c.info_top = 0;
+	inoset_init(&c.seen);
+	wctx_scratch_init(&c);
+	c.sp = sp;
+	c.prefetch = NULL;
+
+	out->top = build_level(&c, d, 1, 0, NULL);
+
+	asp_dirclose(d);
+	wctx_scratch_free(&c);
+	inoset_destroy(&c.seen);
+	dstr_free(&c.path);
+	out->arena = c.arena; /* transfer ownership — caller must arena_destroy */
+	return 0;
+}
+
 void asp_walk(const char *root, const struct options *o, const struct renderer *r,
 	      void *ctx, struct totals *tot, int *errors, struct statprov *sp,
 	      int last_root)

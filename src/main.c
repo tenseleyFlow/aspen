@@ -15,6 +15,7 @@
 #include "version.h"
 
 #include "color.h"
+#include "diff.h"
 #include "entry.h"
 #include "idcache.h"
 #include "options.h"
@@ -95,13 +96,15 @@ int main(int argc, char **argv)
 	 * first descent that actually hits EMFILE (traverse.c, SR-3.9), so trivial and
 	 * shallow runs pay no getrlimit/setrlimit at all. */
 
-	/* Pull out the test-only debug hook; parse everything else as tree flags. */
+	/* Pull out aspen-only flags; parse everything else as tree flags. */
 	char **fav = asp_xmalloc((size_t)(argc + 1) * sizeof *fav);
-	int fac = 0, debug = 0;
+	int fac = 0, debug = 0, diff = 0;
 	fav[fac++] = argv[0];
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--asp-debug-walk"))
 			debug = 1;
+		else if (!strcmp(argv[i], "--asp-diff"))
+			diff = 1;
 		else
 			fav[fac++] = argv[i];
 	}
@@ -134,7 +137,16 @@ int main(int argc, char **argv)
 	options_finalize(&o, outfd); /* derive o.colorize once, before the walk */
 
 	int rc;
-	if (debug) {
+	if (diff) {
+		if (nr != 2) {
+			fprintf(stderr, "%s: --asp-diff requires exactly two directories\n",
+				ASP_PROGNAME);
+			free(fav);
+			free((void *)roots);
+			return 1;
+		}
+		rc = asp_diff_run(roots[0], roots[1], &o, outfd, mb);
+	} else if (debug) {
 		struct totals t;
 		rc = render_tree(roots, &o, &DEBUG_RENDERER, NULL, &t);
 		fprintf(stderr, "[debug] %lu directories, %lu files\n", t.dirs, t.files);

@@ -32,4 +32,14 @@ void asp_walk(const char *root, const struct options *o, const struct renderer *
 	      void *ctx, struct totals *tot, int *errors, struct statprov *sp,
 	      int last_root);
 
+/* Build a full in-memory entry tree for --asp-diff. The caller owns the arena
+ * (arena_destroy to free all entries). Returns 0 on success, -1 if the root
+ * could not be opened. */
+struct asp_built_tree {
+	struct entry **top;
+	struct arena arena;
+};
+int asp_build_tree(const char *root, const struct options *o,
+		   struct statprov *sp, struct asp_built_tree *out);
+
 #endif /* ASP_TRAVERSE_H */
